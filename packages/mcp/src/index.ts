@@ -319,14 +319,14 @@ async function main() {
     }
 
     // Create configuration
-    const config = createMcpConfig();
-    logConfigurationSummary(config);
+    //const config = createMcpConfig();
+    //logConfigurationSummary(config);
 
     // Initialize Chroma manager and start Chroma process
-    await initializeConfigAndChroma(config);
+    //await initializeConfigAndChroma(config);
 
-    const server = new ContextMcpServer(config);
-    await server.start();
+    //const server = new ContextMcpServer(config);
+    //await server.start();
 }
 
 // Handle graceful shutdown
