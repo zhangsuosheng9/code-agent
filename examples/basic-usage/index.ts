@@ -288,45 +288,6 @@ async function testSemanticSearch(codebasePath: string, query: string) {
     console.log(results);
 }
 
-function matchesPattern(filePath: string, pattern: string): boolean {
-    // Convert pattern to regex
-    const regexPattern = pattern
-        .replace(/\./g, '\\.')
-        .replace(/\*\*/g, '.*')
-        .replace(/\*/g, '[^/]*')
-        .replace(/\?/g, '[^/]');
-
-    const regex = new RegExp(`^${regexPattern}$`);
-    return regex.test(filePath);
-}
-
-async function testSemanticSearch(codebasePath: string, query: string) {
-    let host = 'localhost';
-    let port = 19801;
-
-    let vectorDatabase = new ChromaVectorDatabase({
-        host: host,
-        port: port
-    });
-
-    let codeAgentEndpoint = 'https://cppcodeanalyzer-efaxdbfzc2auexad.eastasia-01.azurewebsites.net/';
-    let embedding = new AzureOpenAIEmbedding({
-        codeAgentEmbEndpoint: codeAgentEndpoint,
-        model: 'text-embedding-3-large',
-    });
-
-    let context = new Context({
-        embedding,
-        vectorDatabase,
-        codeAgentEndpoint: codeAgentEndpoint,
-        // codeSplitter: new LangChainCodeSplitter(1000, 200),
-    });
-
-    let results = await context.semanticSearch(query, codebasePath, 3, 0.3, undefined, 'AdsSnR');
-    console.log(results);
-}
-
-
 async function processReIndex(codebasePath: string) {
     let host = 'localhost';
     let port = 19801;

@@ -13,16 +13,16 @@ try {
 /**
  * Generate a snapshot file for the given codebase directory
  * @param rootDir Absolute path to codebase directory
- * @param ignorePatterns Optional array of glob patterns to ignore
+ * @param context Context instance
  * @returns Promise that resolves when snapshot is generated
  */
-async function generateSnapshot(rootDir: string, ignorePatterns: string[] = []): Promise<void> {
+async function generateSnapshot(rootDir: string, context: Context): Promise<void> {
     try {
         console.log(`Generating snapshot for codebase: ${rootDir}`);
-        
+
         // Create synchronizer instance with provided ignore patterns
         const { FileSynchronizer } = await import('@suoshengzhang/claude-context-core');
-        const synchronizer = new FileSynchronizer(rootDir, ignorePatterns);
+        const synchronizer = new FileSynchronizer(rootDir, context.getIgnorePatterns(), context.getSupportedExtensions());
 
         // Initialize will generate initial hashes and save snapshot
         await synchronizer.initialize();
@@ -36,7 +36,7 @@ async function generateSnapshot(rootDir: string, ignorePatterns: string[] = []):
 
 async function indexCodePathForRepo(codebasePath: string, ignorePatterns: string[]) {
     let host = 'localhost';
-    let port = 19802;
+    let port = 19801;
 
     let vectorDatabase = new ChromaVectorDatabase({
         host: host,
@@ -69,7 +69,7 @@ async function indexCodePathForRepo(codebasePath: string, ignorePatterns: string
     const indexStats = await context.indexCodebase(codebasePath);
     console.log(`🔍 Indexed ${indexStats.indexedFiles} files, ${indexStats.totalChunks} code chunks`);
 
-    await generateSnapshot(codebasePath, context.getIgnorePatterns());
+    await generateSnapshot(codebasePath, context);
     console.log('✅ Snapshot generated successfully');
 }
 
