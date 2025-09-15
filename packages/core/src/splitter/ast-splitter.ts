@@ -79,8 +79,8 @@ const SPLITTABLE_NODE_TYPES = {
 };
 
 export class AstCodeSplitter implements Splitter {
-  private chunkSize: number = 2500;
-  private chunkOverlap: number = 300;
+  private chunkSize: number = 25000;
+  private chunkOverlap: number = 3000;
   private parser: Parser;
   private langchainFallback: any; // LangChainCodeSplitter for fallback
 
@@ -103,8 +103,7 @@ export class AstCodeSplitter implements Splitter {
     const langConfig = this.getLanguageConfig(language);
     if (!langConfig) {
       console.log(
-        `📝 Language ${language} not supported by AST, using LangChain splitter for: ${
-          filePath || "unknown"
+        `📝 Language ${language} not supported by AST, using LangChain splitter for: ${filePath || "unknown"
         }`
       );
       return await this.langchainFallback.split(code, language, filePath);
@@ -118,8 +117,7 @@ export class AstCodeSplitter implements Splitter {
 
       if (!tree.rootNode) {
         console.warn(
-          `⚠️  Failed to parse AST for ${language}, falling back to LangChain: ${
-            filePath || "unknown"
+          `⚠️  Failed to parse AST for ${language}, falling back to LangChain: ${filePath || "unknown"
           }`
         );
         return await this.langchainFallback.split(code, language, filePath);
@@ -197,6 +195,9 @@ export class AstCodeSplitter implements Splitter {
     const chunks: CodeChunk[] = [];
     const codeLines = code.split("\n");
 
+    // TODO make it configurable
+    const minLines = 200;
+
     const traverse = (currentNode: Parser.SyntaxNode) => {
       // Check if this node type should be split into a chunk
       if (splittableTypes.includes(currentNode.type)) {
@@ -208,7 +209,7 @@ export class AstCodeSplitter implements Splitter {
         );
 
         // Only create chunk if it has meaningful content
-        if (nodeText.trim().length > 0) {
+        if (nodeText.trim().length > 0 && (endLine - startLine + 1) >= minLines) {
           chunks.push({
             content: nodeText,
             metadata: {
@@ -219,6 +220,7 @@ export class AstCodeSplitter implements Splitter {
               nodeType: currentNode.type,
             },
           });
+          return;
         }
       }
 
