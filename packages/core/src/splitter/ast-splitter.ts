@@ -110,10 +110,11 @@ export class AstCodeSplitter implements Splitter {
     }
 
     try {
-      // console.log(`🌳 Using AST splitter for ${language} file: ${filePath || 'unknown'} at ${new Date().toISOString()}`);
 
-      this.parser.setLanguage(langConfig.parser);
-      const tree = this.parser.parse(code);
+      //this.parser.setLanguage(langConfig.parser);
+      //const tree = this.parser.parse(code);
+
+      const tree = this.parseSourceCode(langConfig, code, language, filePath);
 
       if (!tree.rootNode) {
         console.warn(
@@ -131,6 +132,8 @@ export class AstCodeSplitter implements Splitter {
         language,
         filePath
       );
+
+      return chunks;
 
       // If chunks are too large, split them further
       const refinedChunks = await this.refineChunks(chunks, code);
@@ -152,6 +155,25 @@ export class AstCodeSplitter implements Splitter {
   setChunkOverlap(chunkOverlap: number): void {
     this.chunkOverlap = chunkOverlap;
     this.langchainFallback.setChunkOverlap(chunkOverlap);
+  }
+
+  private parseSourceCode(langConfig: any, code: string, language: string, filePath?: string) {
+
+    const byteLen = Buffer.byteLength(code, "utf8");
+    console.log(`🌳 Using AST splitter for ${language} file: ${filePath || 'unknown'}, length ${byteLen} at ${new Date().toISOString()} `);
+    this.parser.setLanguage(langConfig.parser);
+
+    if (byteLen <= 30000) {
+      return this.parser.parse(code);
+    }
+
+    const len = code.length;
+    return this.parser.parse((index) => {
+      if (index >= len) return "";
+      const end = Math.min(len, index + 30000);
+      return code.slice(index, end);
+    });
+
   }
 
   private getLanguageConfig(
