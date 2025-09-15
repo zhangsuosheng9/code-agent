@@ -55,18 +55,21 @@ async function indexCodePathForRepo(
   // });
 
   const vectorDatabase = new AzureAISearchVectorDatabase({
-    endpoint: "",
+    endpoint: "https://codeagentsearch01.search.windows.net",
     apiKey: "",
   });
 
   // "https://cppcodeanalyzer-efaxdbfzc2auexad.eastasia-01.azurewebsites.net/"
   let embedding = new AzureOpenAIEmbedding({
-    codeAgentEmbEndpoint: "http://localhost:8000/",
+    codeAgentEmbEndpoint: "https://cppcodeanalyzer-efaxdbfzc2auexad.eastasia-01.azurewebsites.net/",
   });
+
+  var codeSplitter = new AstCodeSplitter(20000, 300);
 
   let context = new Context({
     embedding,
     vectorDatabase,
+    codeSplitter,
     supportedExtensions: [".cs", ".js", ".py", ".cpp", ".h"],
     ignorePatterns: ignorePatterns,
     isHybrid: isHybrid,
@@ -104,9 +107,9 @@ async function main() {
 
   const repoConfig = [
     {
-      repoPath: "D:/src/simple_repo",
+      repoPath: "Q:/src/AdsSnr",
       // repoPath: "D:/src2/AdsSnR",
-      ignorePatterns: ["packages/"],
+      ignorePatterns: ["packages/", "*.md", "*.txt", "*.json", "*.yml", "*.yaml", "*.xml", "*.config", "docs/", "third_party/", "3rdparty/", "external/", "build/", "out/", "bin/", "obj/"],
     },
     // {
     //     repoPath: "D:/src2/AdsSnR_IdHash",
@@ -124,7 +127,7 @@ async function main() {
 
   try {
     for (const repo of repoConfig) {
-      await indexCodePathForRepo(repo.repoPath, repo.ignorePatterns, false);
+      await indexCodePathForRepo(repo.repoPath, repo.ignorePatterns, true);
     }
     let endTime = Date.now();
     console.log(`Time taken: ${endTime - startTime}ms`);

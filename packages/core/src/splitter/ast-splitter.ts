@@ -46,7 +46,7 @@ const SPLITTABLE_NODE_TYPES = {
     "function_definition",
     "class_specifier",
     "namespace_definition",
-    "declaration",
+    //"declaration",
   ],
   go: [
     "function_declaration",
@@ -111,11 +111,7 @@ export class AstCodeSplitter implements Splitter {
 
     try {
 
-      //this.parser.setLanguage(langConfig.parser);
-      //const tree = this.parser.parse(code);
-
       const tree = this.parseSourceCode(langConfig, code, language, filePath);
-
       if (!tree.rootNode) {
         console.warn(
           `⚠️  Failed to parse AST for ${language}, falling back to LangChain: ${filePath || "unknown"
@@ -133,12 +129,9 @@ export class AstCodeSplitter implements Splitter {
         filePath
       );
 
-      return chunks;
-
-      // If chunks are too large, split them further
-      const refinedChunks = await this.refineChunks(chunks, code);
-
-      return refinedChunks;
+      // If chunks are too small, merge them together 
+      const mergedChunks = await this.mergeSmallChunks(chunks);
+      return mergedChunks;
     } catch (error) {
       console.warn(
         `⚠️  AST splitter failed for ${language}, falling back to LangChain: ${error}`
@@ -218,35 +211,45 @@ export class AstCodeSplitter implements Splitter {
     const codeLines = code.split("\n");
 
     // TODO make it configurable
-    const minLines = 200;
+    const maxLines = 500;
 
     const traverse = (currentNode: Parser.SyntaxNode) => {
+      const startLine = currentNode.startPosition.row + 1;
+      const endLine = currentNode.endPosition.row + 1;
+      const lineCount = endLine - startLine + 1;
+
       // Check if this node type should be split into a chunk
       if (splittableTypes.includes(currentNode.type)) {
-        const startLine = currentNode.startPosition.row + 1;
-        const endLine = currentNode.endPosition.row + 1;
         const nodeText = code.slice(
           currentNode.startIndex,
           currentNode.endIndex
         );
 
         // Only create chunk if it has meaningful content
-        if (nodeText.trim().length > 0 && (endLine - startLine + 1) >= minLines) {
-          chunks.push({
-            content: nodeText,
-            metadata: {
-              startLine,
-              endLine,
-              language,
-              filePath,
-              nodeType: currentNode.type,
-            },
-          });
-          return;
+        if (nodeText.trim().length > 0) {
+          if (lineCount <= maxLines) {
+            chunks.push({
+              content: nodeText,
+              metadata: {
+                startLine,
+                endLine,
+                language,
+                filePath,
+                nodeType: currentNode.type,
+              },
+            });
+            return;
+          }
+
+          if (lineCount > maxLines) {
+            for (const child of currentNode.children) {
+              traverse(child);
+            }
+            return;
+          }
         }
       }
 
-      // Continue traversing child nodes
       for (const child of currentNode.children) {
         traverse(child);
       }
@@ -268,6 +271,35 @@ export class AstCodeSplitter implements Splitter {
     }
 
     return chunks;
+  }
+
+  private async mergeSmallChunks(chunks: CodeChunk[]): Promise<CodeChunk[]> {
+    if (chunks.length === 0) return [];
+
+    const minLines = 400;
+
+    const mergedChunks: CodeChunk[] = [];
+    let current = { ...chunks[0] };
+    let nodeTypeSet = new Set<string>();
+
+    for (let i = 1; i < chunks.length; i++) {
+      const next = chunks[i];
+      const currentLineCount = current.metadata.endLine - current.metadata.startLine + 1;
+
+      if (currentLineCount < minLines) {
+        current.content += "\n" + next.content;
+        current.metadata.endLine = next.metadata.endLine;
+        nodeTypeSet.add(next.metadata.nodeType || "");
+      } else {
+        current.metadata.nodeType = Array.from(nodeTypeSet).filter(t => t).join(", ");
+        mergedChunks.push(current);
+        current = { ...next };
+        nodeTypeSet.clear();
+      }
+    }
+
+    mergedChunks.push(current);
+    return mergedChunks;
   }
 
   private async refineChunks(
