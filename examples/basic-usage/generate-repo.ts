@@ -55,13 +55,13 @@ async function indexCodePathForRepo(
   // });
 
   const vectorDatabase = new AzureAISearchVectorDatabase({
-    endpoint: "https://codeagentsearch01.search.windows.net",
+    endpoint: "",
     apiKey: "",
   });
 
   // "https://cppcodeanalyzer-efaxdbfzc2auexad.eastasia-01.azurewebsites.net/"
   let embedding = new AzureOpenAIEmbedding({
-    codeAgentEmbEndpoint: "https://cppcodeanalyzer-efaxdbfzc2auexad.eastasia-01.azurewebsites.net/",
+    codeAgentEmbEndpoint: "",
   });
 
   var codeSplitter = new AstCodeSplitter(20000, 300);
