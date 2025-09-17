@@ -22,6 +22,7 @@ import {
   SearchOptions as AzureSearchOptions,
   VectorQuery,
 } from "@azure/search-documents";
+import axios from "axios";
 
 export interface AzureAISearchConfig {
   endpoint: string;
@@ -86,6 +87,107 @@ export class AzureAISearchVectorDatabase implements VectorDatabase {
       : `https://${endpoint}`;
     const credential = new AzureKeyCredential(this.config.apiKey);
     return new SearchClient(finalEndpoint, indexName, credential);
+  }
+
+  private async sendHttpRequest(collectionName: string, queryVector: number[], options?: SearchOptions) {
+    const endpoint = this.config.endpoint.replace(/\/$/, "");
+    const finalEndpoint = endpoint.startsWith("https://")
+      ? endpoint
+      : `https://${endpoint}`;
+    const topK = options?.topK || 10;
+
+    let data: any = {};
+
+    if (options?.type === "vector") {
+      data = {
+        vectorQueries: [
+          {
+            vector: queryVector,
+            kind: "vector",
+            k: topK,
+            fields: "contentVector",
+          }
+        ],
+        select: "id,content,relativePath,startLine,endLine,fileExtension,metadata",
+        top: topK,
+      }
+    } else if (options?.type === "text") {
+      data = {
+        queryType: "simple",
+        searchMode: "any",
+        search: options?.queryText || "",
+        searchFields: "content",
+        select: "id,content,relativePath,startLine,endLine,fileExtension,metadata",
+        top: topK,
+      }
+    } else if (options?.type === "hybrid") {
+      data = {
+        vectorQueries: [
+          {
+            vector: queryVector,
+            kind: "vector",
+            k: topK,
+            fields: "contentVector",
+          }
+        ],
+        queryType: "semantic",
+        searchFields: "content",
+        select: "id,content,relativePath,startLine,endLine,fileExtension,metadata",
+        top: topK,
+        searchMode: "any",
+        semanticConfiguration: "content_rank",
+        search: options?.queryText || "",
+      }
+    }
+    else {
+      throw new Error("Invalid search type - must be 'vector', 'text', or 'hybrid'");
+    }
+
+    if (options?.filterExpr && options.filterExpr.trim().length > 0) {
+      data.filter = options.filterExpr;
+    }
+
+    const httpParams = {
+      method: "POST",
+      url: `${finalEndpoint}/indexes/${collectionName}/docs/search`,
+      params: { 'api-version': this.config.apiVersion || '2024-07-01' },
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': this.config.apiKey,
+      },
+      data: data
+    };
+
+    const response = await axios.request(httpParams);
+
+    const results: any[] = [];
+
+    for (const result of response.data.value) {
+
+      let metadata = {};
+      try {
+        metadata = JSON.parse(result.metadata || "{}");
+      } catch (error) {
+        console.warn(`Failed to parse metadata for item ${result.id}:`, error);
+        metadata = {};
+      }
+
+      results.push({
+        document: {
+          id: result.id?.toString() || "",
+          vector: queryVector, // Vector not returned in search results
+          content: result.content || "",
+          relativePath: result.relativePath || "",
+          startLine: result.startLine || 0,
+          endLine: result.endLine || 0,
+          fileExtension: result.fileExtension || "",
+          metadata: metadata,
+        },
+        score: result["@search.score"] || 0,
+        rerankScore: result["@search.rerankerScore"] || 0,
+      });
+    }
+    return results;
   }
 
   async createCollection(
@@ -323,109 +425,12 @@ export class AzureAISearchVectorDatabase implements VectorDatabase {
     collectionName: string,
     queryVector: number[],
     options?: SearchOptions
-  ): Promise<VectorSearchResult[]> {
+  ): Promise<any[]> {
     await this.ensureInitialized();
     let lowerCaseCollectionName = collectionName.toLowerCase();
     const topK = options?.topK || 10;
 
-    try {
-      let searchOptions: any = {};
-      if (options?.type === "vector") {
-        searchOptions = {
-          count: true,
-          // searchFields: ["content"],
-          vectorQueries: [
-            {
-              kind: "vector",
-              vector: queryVector,
-              k: topK,
-              fields: "contentVector",
-            },
-          ],
-          select: [
-            "id",
-            "content",
-            "relativePath",
-            "startLine",
-            "endLine",
-            "fileExtension",
-            "metadata",
-          ],
-          top: topK,
-        };
-      } else if (options?.type === "text") {
-        searchOptions = {
-          count: true,
-          queryType: "simple",
-          searchMode: "all",
-          search: options?.queryText || "",
-          searchFields: ["content"],
-          select: [
-            "id",
-            "content",
-            "relativePath",
-            "startLine",
-            "endLine",
-            "fileExtension",
-            "metadata",
-          ],
-          top: topK,
-        };
-      } else {
-        // TODO: Implement hybrid search
-      }
-
-      // Build search options for Azure AI Search SDK
-
-      // Apply filter if provided
-      if (options?.filterExpr && options.filterExpr.trim().length > 0) {
-        searchOptions.filter = options.filterExpr;
-      }
-
-      const searchClient = this.getSearchClient(lowerCaseCollectionName);
-      const searchResults = await searchClient.search(
-        options?.queryText || "",
-        searchOptions
-      );
-
-      // Transform response to VectorSearchResult format
-      const results: VectorSearchResult[] = [];
-      for await (const result of searchResults.results) {
-        // Parse metadata from JSON string
-        let metadata = {};
-        try {
-          metadata = JSON.parse((result.document.metadata as string) || "{}");
-        } catch (error) {
-          console.warn(
-            `Failed to parse metadata for item ${result.document.id}:`,
-            error
-          );
-          metadata = {};
-        }
-
-        results.push({
-          document: {
-            id: result.document.id?.toString() || "",
-            vector: queryVector, // Vector not returned in search results
-            content: (result.document.content as string) || "",
-            relativePath: (result.document.relativePath as string) || "",
-            startLine: (result.document.startLine as number) || 0,
-            endLine: (result.document.endLine as number) || 0,
-            fileExtension: (result.document.fileExtension as string) || "",
-            metadata: metadata,
-          },
-          score: result.score || 0,
-        });
-      }
-
-      return results;
-    } catch (error) {
-      console.error(
-        `❌ Failed to search in collection '${lowerCaseCollectionName}':`,
-        error
-      );
-      throw error;
-    }
+    return this.sendHttpRequest(lowerCaseCollectionName, queryVector, options);
   }
 
   async hybridSearch(
