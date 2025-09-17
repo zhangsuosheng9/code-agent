@@ -6,7 +6,7 @@ import {
 import axios from "axios";
 
 // Configuration
-const COLLECTION_NAME = "test_azure_search_collection";
+const COLLECTION_NAME = "hybrid_code_chunks_adssnr";
 const AZURE_ENDPOINT = "";
 const AZURE_API_KEY = "";
 const DENSE_VECTOR_SIZE = 3072; // OpenAI text-embedding-3-small dimension
@@ -79,6 +79,7 @@ async function main() {
   });
 
   try {
+    /*
     // Step 1: Generate embeddings for test documents
     console.log("\n📝 Step 1: Generating embeddings for test documents...");
     for (const doc of testDocuments) {
@@ -126,11 +127,13 @@ async function main() {
 
     await azureClient.insert(COLLECTION_NAME, vectorDocuments);
     console.log(`✅ Inserted ${vectorDocuments.length} documents successfully`);
+    */
 
     // Step 4: Search for records
-    console.log("\n🔍 Step 4: Searching for records...");
-    const queryText = "what is queeneaggregator";
+    const queryText = "How does queeneaggregator used in JennyA?";
     const queryEmbedding = await generateEmbedding(queryText);
+
+    console.log("\n🔍 Step 4: Searching for records...");
 
     const searchResults = await azureClient.search(
       COLLECTION_NAME,
@@ -138,7 +141,7 @@ async function main() {
       {
         topK: 30,
         queryText: queryText,
-        type: "vector",
+        type: "hybrid",
       }
     );
 
@@ -147,10 +150,8 @@ async function main() {
     );
     searchResults.forEach((result, index) => {
       console.log(
-        `  ${index + 1}. ${
-          result.document.relativePath
-        } (score: ${result.score.toFixed(4)}), line: ${
-          result.document.startLine
+        `  ${index + 1}. ${result.document.relativePath
+        } (score: ${result.score.toFixed(4)}), rerank_score: ${result.rerankScore} line: ${result.document.startLine
         } - ${result.document.endLine}`
       );
       console.log(
@@ -158,6 +159,7 @@ async function main() {
       );
     });
 
+    /*
     // Step 5: Delete record by relativePath
     console.log("\n🗑️  Step 5: Deleting record by relativePath...");
 
@@ -196,8 +198,7 @@ async function main() {
     );
     remainingResults.forEach((result, index) => {
       console.log(
-        `  ${index + 1}. ${
-          result.document.relativePath
+        `  ${index + 1}. ${result.document.relativePath
         } (score: ${result.score.toFixed(4)})`
       );
     });
@@ -214,6 +215,7 @@ async function main() {
     console.log("\n🗑️  Step 8: Deleting collection...");
     await azureClient.dropCollection(COLLECTION_NAME);
     console.log(`✅ Collection '${COLLECTION_NAME}' deleted successfully`);
+    */
 
     console.log("\n🎉 All tests completed successfully!");
     console.log("=====================================");
