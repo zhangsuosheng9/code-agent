@@ -171,7 +171,7 @@ export class Context {
     this.codeSplitter = config.codeSplitter || new AstCodeSplitter(2500, 300);
     this.codeAgentEndpoint =
       config.codeAgentEndpoint || "http://localhost:8000";
-    this.isHybrid = config.isHybrid || false;
+    this.isHybrid = config.isHybrid ?? false;
     // Load custom extensions from environment variables
     const envCustomExtensions = this.getCustomExtensionsFromEnv();
 

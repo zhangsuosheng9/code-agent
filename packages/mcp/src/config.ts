@@ -7,11 +7,11 @@ export interface ContextMcpConfig {
   version: string;
   // Embedding provider configuration
   embeddingProvider:
-    | "OpenAI"
-    | "Azure OpenAI"
-    | "VoyageAI"
-    | "Gemini"
-    | "Ollama";
+  | "OpenAI"
+  | "Azure OpenAI"
+  | "VoyageAI"
+  | "Gemini"
+  | "Ollama";
   embeddingModel: string;
   // Provider-specific API keys
   openaiApiKey?: string;
@@ -115,10 +115,8 @@ export function getEmbeddingModelForProvider(provider: string): string {
         envManager.get("EMBEDDING_MODEL") ||
         getDefaultModelForProvider(provider);
       console.log(
-        `[DEBUG] 🎯 Ollama model selection: OLLAMA_MODEL=${
-          envManager.get("OLLAMA_MODEL") || "NOT SET"
-        }, EMBEDDING_MODEL=${
-          envManager.get("EMBEDDING_MODEL") || "NOT SET"
+        `[DEBUG] 🎯 Ollama model selection: OLLAMA_MODEL=${envManager.get("OLLAMA_MODEL") || "NOT SET"
+        }, EMBEDDING_MODEL=${envManager.get("EMBEDDING_MODEL") || "NOT SET"
         }, selected=${ollamaModel}`
       );
       return ollamaModel;
@@ -132,8 +130,7 @@ export function getEmbeddingModelForProvider(provider: string): string {
         envManager.get("EMBEDDING_MODEL") ||
         getDefaultModelForProvider(provider);
       console.log(
-        `[DEBUG] 🎯 ${provider} model selection: EMBEDDING_MODEL=${
-          envManager.get("EMBEDDING_MODEL") || "NOT SET"
+        `[DEBUG] 🎯 ${provider} model selection: EMBEDDING_MODEL=${envManager.get("EMBEDDING_MODEL") || "NOT SET"
         }, selected=${selectedModel}`
       );
       return selectedModel;
@@ -144,30 +141,26 @@ export function createMcpConfig(): ContextMcpConfig {
   // Debug: Print all environment variables related to Context
   console.log(`[DEBUG] 🔍 Environment Variables Debug:`);
   console.log(
-    `[DEBUG]   EMBEDDING_PROVIDER: ${
-      envManager.get("EMBEDDING_PROVIDER") || "NOT SET"
+    `[DEBUG]   EMBEDDING_PROVIDER: ${envManager.get("EMBEDDING_PROVIDER") || "NOT SET"
     }`
   );
   console.log(
-    `[DEBUG]   EMBEDDING_MODEL: ${
-      envManager.get("EMBEDDING_MODEL") || "NOT SET"
+    `[DEBUG]   EMBEDDING_MODEL: ${envManager.get("EMBEDDING_MODEL") || "NOT SET"
     }`
   );
   console.log(
     `[DEBUG]   OLLAMA_MODEL: ${envManager.get("OLLAMA_MODEL") || "NOT SET"}`
   );
   console.log(
-    `[DEBUG]   GEMINI_API_KEY: ${
-      envManager.get("GEMINI_API_KEY")
-        ? "SET (length: " + envManager.get("GEMINI_API_KEY")!.length + ")"
-        : "NOT SET"
+    `[DEBUG]   GEMINI_API_KEY: ${envManager.get("GEMINI_API_KEY")
+      ? "SET (length: " + envManager.get("GEMINI_API_KEY")!.length + ")"
+      : "NOT SET"
     }`
   );
   console.log(
-    `[DEBUG]   OPENAI_API_KEY: ${
-      envManager.get("OPENAI_API_KEY")
-        ? "SET (length: " + envManager.get("OPENAI_API_KEY")!.length + ")"
-        : "NOT SET"
+    `[DEBUG]   OPENAI_API_KEY: ${envManager.get("OPENAI_API_KEY")
+      ? "SET (length: " + envManager.get("OPENAI_API_KEY")!.length + ")"
+      : "NOT SET"
     }`
   );
   console.log(
@@ -225,9 +218,8 @@ export function logConfigurationSummary(config: ContextMcpConfig): void {
   console.log(`[MCP]   Embedding Provider: ${config.embeddingProvider}`);
   console.log(`[MCP]   Embedding Model: ${config.embeddingModel}`);
   console.log(
-    `[MCP]   Milvus Address: ${
-      config.milvusAddress ||
-      (config.milvusToken ? "[Auto-resolve from token]" : "[Not configured]")
+    `[MCP]   Milvus Address: ${config.milvusAddress ||
+    (config.milvusToken ? "[Auto-resolve from token]" : "[Not configured]")
     }`
   );
 
@@ -235,8 +227,7 @@ export function logConfigurationSummary(config: ContextMcpConfig): void {
   switch (config.embeddingProvider) {
     case "OpenAI":
       console.log(
-        `[MCP]   OpenAI API Key: ${
-          config.openaiApiKey ? "✅ Configured" : "❌ Missing"
+        `[MCP]   OpenAI API Key: ${config.openaiApiKey ? "✅ Configured" : "❌ Missing"
         }`
       );
       if (config.openaiBaseUrl) {
@@ -245,13 +236,11 @@ export function logConfigurationSummary(config: ContextMcpConfig): void {
       break;
     case "Azure OpenAI":
       console.log(
-        `[MCP]   Azure OpenAI API Key: ${
-          config.azureOpenAIApiKey ? "✅ Configured" : "❌ Missing"
+        `[MCP]   Azure OpenAI API Key: ${config.azureOpenAIApiKey ? "✅ Configured" : "❌ Missing"
         }`
       );
       console.log(
-        `[MCP]   Azure OpenAI Endpoint: ${
-          config.azureOpenAIEndpoint || "❌ Missing"
+        `[MCP]   Azure OpenAI Endpoint: ${config.azureOpenAIEndpoint || "❌ Missing"
         }`
       );
       if (config.azureOpenAIDeploymentName) {
@@ -267,15 +256,13 @@ export function logConfigurationSummary(config: ContextMcpConfig): void {
       break;
     case "VoyageAI":
       console.log(
-        `[MCP]   VoyageAI API Key: ${
-          config.voyageaiApiKey ? "✅ Configured" : "❌ Missing"
+        `[MCP]   VoyageAI API Key: ${config.voyageaiApiKey ? "✅ Configured" : "❌ Missing"
         }`
       );
       break;
     case "Gemini":
       console.log(
-        `[MCP]   Gemini API Key: ${
-          config.geminiApiKey ? "✅ Configured" : "❌ Missing"
+        `[MCP]   Gemini API Key: ${config.geminiApiKey ? "✅ Configured" : "❌ Missing"
         }`
       );
       break;

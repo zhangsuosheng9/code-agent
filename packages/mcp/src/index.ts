@@ -40,7 +40,7 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { Context } from "@suoshengzhang/claude-context-core";
+import { AzureAISearchVectorDatabase, Context } from "@suoshengzhang/claude-context-core";
 import { MilvusVectorDatabase } from "@suoshengzhang/claude-context-core";
 
 // Import our modular components
@@ -92,9 +92,15 @@ class ContextMcpServer {
     logEmbeddingProviderInfo(config, embedding);
 
     // Initialize vector database
+    /*
     let vectorDatabase = new ChromaVectorDatabase({
       host: config.chromaAddress,
       port: config.chromaPort,
+    });
+    */
+    let vectorDatabase = new AzureAISearchVectorDatabase({
+      endpoint: config.azureOpenAIEndpoint ? config.azureOpenAIEndpoint : "",
+      apiKey: config.azureOpenAIApiKey ? config.azureOpenAIApiKey : "",
     });
 
     // Initialize Claude Context
@@ -102,6 +108,7 @@ class ContextMcpServer {
       embedding,
       vectorDatabase,
       codeAgentEndpoint: config.codeAgentEmbEndpoint,
+      isHybrid: true
     });
 
     // Initialize managers
@@ -226,6 +233,11 @@ This tool is versatile and can be used before completing various tasks to retrie
                     "Optional: List of file extensions to filter results. (e.g., ['.ts','.py']).",
                   default: [],
                 },
+                enableHybrid: {
+                  type: "boolean",
+                  description:
+                    "If enable hybrid search",
+                },
               },
               required: ["query"],
             },
@@ -297,7 +309,7 @@ This tool is versatile and can be used before completing various tasks to retrie
 
     // Start background sync after server is connected
     console.log("[SYNC-DEBUG] Initializing background sync...");
-    this.syncManager.startBackgroundSync();
+    //this.syncManager.startBackgroundSync();
     console.log("[SYNC-DEBUG] MCP server initialization complete");
   }
 }
@@ -338,7 +350,7 @@ async function main() {
   logConfigurationSummary(config);
 
   // Initialize Chroma manager and start Chroma process
-  await initializeConfigAndChroma(config);
+  //await initializeConfigAndChroma(config);
 
   const server = new ContextMcpServer(config);
   await server.start();
