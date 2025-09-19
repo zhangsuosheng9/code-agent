@@ -434,7 +434,7 @@ export class ToolHandlers {
     }
 
     public async handleSearchCode(args: any) {
-        let { path: codebasePath, query, limit = 10, extensionFilter } = args;
+        let { query, path: codebasePath, limit = 10, extensionFilter, enableHybrid = true } = args;
         const resultLimit = limit || 10;
 
         try {
@@ -474,6 +474,7 @@ export class ToolHandlers {
 
             trackCodebasePath(absolutePath);
 
+            /* TODO Add Index back
             // Check if this codebase is indexed or being indexed
             const isIndexed = this.snapshotManager.getIndexedCodebases().includes(absolutePath);
             const isIndexing = this.snapshotManager.getIndexingCodebases().includes(absolutePath);
@@ -497,6 +498,7 @@ export class ToolHandlers {
             console.log(`[SEARCH] Searching in codebase: ${absolutePath}`);
             console.log(`[SEARCH] Query: "${query}"`);
             console.log(`[SEARCH] Indexing status: ${isIndexing ? 'In Progress' : 'Completed'}`);
+            */
 
             // Log embedding provider information before search
             const embeddingProvider = this.context.getEmbedding();
@@ -528,16 +530,19 @@ export class ToolHandlers {
                 Math.min(resultLimit, 50),
                 0.3,
                 filterExpr,
-                gitRepoName
+                gitRepoName,
+                enableHybrid
             );
 
             console.log(`[SEARCH] ✅ Search completed! Found ${searchResults.length} results using ${embeddingProvider.getProvider()} embeddings`);
 
             if (searchResults.length === 0) {
                 let noResultsMessage = `No results found for query: "${query}" in codebase '${absolutePath}'`;
+                /* TODO Add index back
                 if (isIndexing) {
                     noResultsMessage += `\n\nNote: This codebase is still being indexed. Try searching again after indexing completes, or the query may not match any indexed content.`;
                 }
+                    */
                 return {
                     content: [{
                         type: "text",
@@ -558,11 +563,15 @@ export class ToolHandlers {
                     `   Context: \n\`\`\`${result.language}\n${context}\n\`\`\`\n`;
             }).join('\n');
 
+            /* TODO Add index back
             let resultMessage = `Found ${searchResults.length} results for query: "${query}" in codebase '${absolutePath}'${indexingStatusMessage}\n\n${formattedResults}`;
 
             if (isIndexing) {
                 resultMessage += `\n\n💡 **Tip**: This codebase is still being indexed. More results may become available as indexing progresses.`;
             }
+                */
+
+            let resultMessage = `Found ${searchResults.length} results for query: "${query}" in codebase '${absolutePath}'\n\n${formattedResults}`;
 
             return {
                 content: [{

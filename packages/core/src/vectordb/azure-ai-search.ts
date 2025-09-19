@@ -95,6 +95,7 @@ export class AzureAISearchVectorDatabase implements VectorDatabase {
       ? endpoint
       : `https://${endpoint}`;
     const topK = options?.topK || 10;
+    let lowerCaseCollectionName = collectionName.toLowerCase();
 
     let data: any = {};
 
@@ -149,7 +150,7 @@ export class AzureAISearchVectorDatabase implements VectorDatabase {
 
     const httpParams = {
       method: "POST",
-      url: `${finalEndpoint}/indexes/${collectionName}/docs/search`,
+      url: `${finalEndpoint}/indexes/${lowerCaseCollectionName}/docs/search`,
       params: { 'api-version': this.config.apiVersion || '2024-07-01' },
       headers: {
         'Content-Type': 'application/json',
@@ -352,8 +353,8 @@ export class AzureAISearchVectorDatabase implements VectorDatabase {
     const finalEndpoint = endpoint.startsWith("https://")
       ? endpoint
       : `https://${endpoint}`;
-
-    const url = `${finalEndpoint}/indexes/${collectionName}?api-version=${this.config.apiVersion || '2024-07-01'}`;
+    let lowerCaseCollectionName = collectionName.toLowerCase();
+    const url = `${finalEndpoint}/indexes/${lowerCaseCollectionName}?api-version=${this.config.apiVersion || '2024-07-01'}`;
 
     try {
       const res = await axios.get(url, {
@@ -370,7 +371,11 @@ export class AzureAISearchVectorDatabase implements VectorDatabase {
         throw new Error(`Failed to check collection existence: ${res.status} ${res.data}`);
       }
     } catch (error) {
-      console.error(`❌ Failed to check collection existence:`, error);
+      if (error instanceof Error) {
+        console.error(`❌ Failed to check collection existence:`, error.message);
+      } else {
+        console.error(`❌ Failed to check collection existence:`, error);
+      }
       throw error;
     }
   }
