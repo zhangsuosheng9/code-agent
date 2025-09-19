@@ -203,15 +203,13 @@ export class Context {
     );
     if (envCustomExtensions.length > 0) {
       console.log(
-        `📎 Loaded ${
-          envCustomExtensions.length
+        `📎 Loaded ${envCustomExtensions.length
         } custom extensions from environment: ${envCustomExtensions.join(", ")}`
       );
     }
     if (envCustomIgnorePatterns.length > 0) {
       console.log(
-        `🚫 Loaded ${
-          envCustomIgnorePatterns.length
+        `🚫 Loaded ${envCustomIgnorePatterns.length
         } custom ignore patterns from environment: ${envCustomIgnorePatterns.join(
           ", "
         )}`
@@ -358,8 +356,7 @@ export class Context {
       percentage: 0,
     });
     console.log(
-      `Debug2: Preparing vector collection for codebase${
-        forceReindex ? " (FORCE REINDEX)" : ""
+      `Debug2: Preparing vector collection for codebase${forceReindex ? " (FORCE REINDEX)" : ""
       }`
     );
     await this.prepareCollection(codebasePath, forceReindex);
@@ -495,7 +492,7 @@ export class Context {
       processedChanges++;
       const percentage = Math.round(
         (processedChanges / (removed.length + modified.length + added.length)) *
-          100
+        100
       );
       progressCallback?.({
         phase,
@@ -584,13 +581,12 @@ export class Context {
         throw new Error("Git repository name is required");
       }
 
-      const url = `${
-        this.codeAgentEndpoint
-      }/code_retrieve?codebase=${encodeURIComponent(
-        gitRepoName
-      )}&question=${encodeURIComponent(
-        query
-      )}&limit=${limit}&path=${encodeURIComponent(codebasePath)}`;
+      const url = `${this.codeAgentEndpoint
+        }/code_retrieve?codebase=${encodeURIComponent(
+          gitRepoName
+        )}&question=${encodeURIComponent(
+          query
+        )}&limit=${limit}&path=${encodeURIComponent(codebasePath)}`;
       console.log(`🔍 Fetching server-side results from: ${url}`);
 
       const response = await fetch(url);
@@ -736,10 +732,10 @@ export class Context {
     topK: number = 5,
     threshold: number = 0.5,
     filterExpr?: string,
-    gitRepoName?: string
+    gitRepoName?: string,
+    enableHybrid?: boolean
   ): Promise<SemanticSearchResult[]> {
-    const isHybrid = this.getIsHybrid();
-    const searchType = isHybrid === true ? "hybrid search" : "semantic search";
+    const searchType = enableHybrid === true ? "hybrid search" : "semantic search";
     console.log(`🔍 Executing ${searchType}: "${query}" in ${codebasePath}`);
 
     if (!codebasePath) {
@@ -759,75 +755,26 @@ export class Context {
       return [];
     }
 
-    if (isHybrid === true) {
-      try {
-        // Check collection stats to see if it has data
-        const stats = await this.vectorDatabase.query(
-          collectionName,
-          "",
-          ["id"],
-          1
-        );
-        console.log(
-          `🔍 Collection '${collectionName}' exists and appears to have data`
-        );
-      } catch (error) {
-        console.log(
-          `⚠️  Collection '${collectionName}' exists but may be empty or not properly indexed:`,
-          error
-        );
-      }
+    console.log(`🔍 Generating embeddings for query: "${query}"`);
+    const queryEmbedding: EmbeddingVector = await this.embedding.embed(query);
+    console.log(
+      `✅ Generated embedding vector with dimension: ${queryEmbedding.vector.length}`
+    );
+    console.log(
+      `🔍 First 5 embedding values: [${queryEmbedding.vector
+        .slice(0, 5)
+        .join(", ")}]`
+    );
 
-      // 1. Generate query vector
-      console.log(`🔍 Generating embeddings for query: "${query}"`);
-      const queryEmbedding: EmbeddingVector = await this.embedding.embed(query);
-      console.log(
-        `✅ Generated embedding vector with dimension: ${queryEmbedding.vector.length}`
-      );
-      console.log(
-        `🔍 First 5 embedding values: [${queryEmbedding.vector
-          .slice(0, 5)
-          .join(", ")}]`
-      );
+    if (enableHybrid === true) {
 
-      // 2. Prepare hybrid search requests
-      const searchRequests: HybridSearchRequest[] = [
-        {
-          data: queryEmbedding.vector,
-          anns_field: "vector",
-          param: { nprobe: 10 },
-          limit: topK,
-        },
-        {
-          data: query,
-          anns_field: "sparse_vector",
-          param: { drop_ratio_search: 0.2 },
-          limit: topK,
-        },
-      ];
+      const searchResults = await this.vectorDatabase.search(collectionName, queryEmbedding.vector, {
+        topK: topK,
+        queryText: query,
+        filterExpr: filterExpr,
+        type: "hybrid",
+      });
 
-      console.log(
-        `🔍 Search request 1 (dense): anns_field="${searchRequests[0].anns_field}", vector_dim=${queryEmbedding.vector.length}, limit=${searchRequests[0].limit}`
-      );
-      console.log(
-        `🔍 Search request 2 (sparse): anns_field="${searchRequests[1].anns_field}", query_text="${query}", limit=${searchRequests[1].limit}`
-      );
-
-      // 3. Execute hybrid search
-      console.log(`🔍 Executing hybrid search with RRF reranking...`);
-      const searchResults: HybridSearchResult[] =
-        await this.vectorDatabase.hybridSearch(collectionName, searchRequests, {
-          rerank: {
-            strategy: "rrf",
-            params: { k: 100 },
-          },
-          limit: topK,
-          filterExpr,
-        });
-
-      console.log(`🔍 Raw search results count: ${searchResults.length}`);
-
-      // 4. Convert to semantic search result format
       const results: SemanticSearchResult[] = searchResults.map((result) => ({
         content: result.document.content,
         relativePath: result.document.relativePath,
@@ -847,15 +794,16 @@ export class Context {
       return results;
     } else {
       // Regular semantic search
-      // 1. Generate query vector
-      const queryEmbedding: EmbeddingVector = await this.embedding.embed(query);
 
       // 2. Search in vector database and fetch server results in parallel
+      // TODO Implement merging logic
+      /*
       const [searchResults, searchResultsFromServer] = await Promise.all([
-        this.vectorDatabase.search(collectionName, queryEmbedding.vector, {
-          topK,
-          threshold,
-          filterExpr,
+        await this.vectorDatabase.search(collectionName, queryEmbedding.vector, {
+          topK: topK,
+          queryText: query,
+          filter: filterExpr,
+          type: "vector"
         }),
         this.fetchServerSearchResults(gitRepoName, query, topK, codebasePath),
       ]);
@@ -877,6 +825,24 @@ export class Context {
         endLine: result.document.endLine,
         language: result.document.metadata.language || "unknown",
         score: result.score,
+      }));
+
+      */
+
+      const searchResults = await this.vectorDatabase.search(collectionName, queryEmbedding.vector, {
+        topK: topK,
+        filterExpr: filterExpr,
+        type: "vector",
+      });
+
+      const results: SemanticSearchResult[] = searchResults.map((result) => ({
+        content: result.document.content,
+        relativePath: result.document.relativePath,
+        startLine: result.document.startLine,
+        endLine: result.document.endLine,
+        language: result.document.metadata.language || "unknown",
+        score: result.score,
+        rerankScore: result.rerankScore,
       }));
 
       console.log(`✅ Found ${results.length} relevant results`);
@@ -1026,8 +992,7 @@ export class Context {
     const isHybrid = this.getIsHybrid();
     const collectionType = isHybrid === true ? "hybrid vector" : "vector";
     console.log(
-      `🔧 Preparing ${collectionType} collection for codebase: ${codebasePath}${
-        forceReindex ? " (FORCE REINDEX)" : ""
+      `🔧 Preparing ${collectionType} collection for codebase: ${codebasePath}${forceReindex ? " (FORCE REINDEX)" : ""
       }`
     );
     const collectionName = this.getCollectionName(codebasePath);
@@ -1162,8 +1127,7 @@ export class Context {
         // Log files with many chunks or large content
         if (chunks.length > 50) {
           console.warn(
-            `⚠️  File ${filePath} generated ${
-              chunks.length
+            `⚠️  File ${filePath} generated ${chunks.length
             } chunks (${Math.round(content.length / 1024)}KB)`
           );
         } else if (content.length > 100000) {
@@ -1265,8 +1229,7 @@ export class Context {
     const isHybrid = this.getIsHybrid();
     const searchType = isHybrid === true ? "hybrid" : "regular";
     console.log(
-      `[processChunkBatch][${new Date().toLocaleString()}] Processing batch of ${
-        chunks.length
+      `[processChunkBatch][${new Date().toLocaleString()}] Processing batch of ${chunks.length
       } chunks (~${estimatedTokens} tokens) for ${searchType}`
     );
     await this.processChunkBatch(chunks, codebasePath);
@@ -1280,8 +1243,7 @@ export class Context {
     codebasePath: string
   ): Promise<void> {
     console.log(
-      `[processChunkBatch][${new Date().toLocaleString()}] Start process ${
-        chunks.length
+      `[processChunkBatch][${new Date().toLocaleString()}] Start process ${chunks.length
       } chunks...`
     );
     const isHybrid = this.getIsHybrid();

@@ -11,6 +11,7 @@ export interface SemanticSearchResult {
   endLine: number;
   language: string;
   score: number;
+  rerankScore?: number;
 }
 
 export interface EmbeddingVector {

@@ -41,6 +41,7 @@ export interface RerankStrategy {
 export interface VectorSearchResult {
   document: VectorDocument;
   score: number;
+  rerankScore?: number;
 }
 
 export interface HybridSearchResult {
