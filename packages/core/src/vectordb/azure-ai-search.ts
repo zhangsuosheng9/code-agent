@@ -348,19 +348,29 @@ export class AzureAISearchVectorDatabase implements VectorDatabase {
   }
 
   async hasCollection(collectionName: string): Promise<boolean> {
-    await this.ensureInitialized();
-    let lowerCaseCollectionName = collectionName.toLowerCase();
+    const endpoint = this.config.endpoint.replace(/\/$/, "");
+    const finalEndpoint = endpoint.startsWith("https://")
+      ? endpoint
+      : `https://${endpoint}`;
+
+    const url = `${finalEndpoint}/indexes/${collectionName}?api-version=${this.config.apiVersion || '2024-07-01'}`;
+
     try {
-      await this.indexClient.getIndex(lowerCaseCollectionName);
-      return true;
-    } catch (error: any) {
-      if (error.statusCode === 404) {
-        return false;
+      const res = await axios.get(url, {
+        headers: {
+          'api-key': this.config.apiKey
+        },
+        validateStatus: (status: number) => true
+      });
+      if (res.status === 200) {
+        return true;
+      } else if (res.status === 404) {
+        throw new Error(`Collection '${collectionName}' does not exist`);
+      } else {
+        throw new Error(`Failed to check collection existence: ${res.status} ${res.data}`);
       }
-      console.error(
-        `❌ Failed to check collection '${lowerCaseCollectionName}' existence:`,
-        error
-      );
+    } catch (error) {
+      console.error(`❌ Failed to check collection existence:`, error);
       throw error;
     }
   }
