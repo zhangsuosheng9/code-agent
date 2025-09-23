@@ -11,13 +11,6 @@ export {
   COLLECTION_LIMIT_MESSAGE,
 } from "./types";
 
-// Implementation class exports
-export {
-  MilvusRestfulVectorDatabase,
-  MilvusRestfulConfig,
-} from "./milvus-restful-vectordb";
-export { MilvusVectorDatabase, MilvusConfig } from "./milvus-vectordb";
-export { ChromaVectorDatabase, ChromaConfig } from "./chroma-vectordb";
 export {
   AzureAISearchVectorDatabase,
   AzureAISearchConfig,

@@ -1,13 +1,16 @@
 import {
   AzureAISearchVectorDatabase,
   AzureOpenAIEmbedding,
+  Context,
   VectorDocument,
+  AstCodeSplitter,
+  SemanticSearchResult,
 } from "@suoshengzhang/claude-context-core";
 import axios from "axios";
 
 // Configuration
 const COLLECTION_NAME = "hybrid_code_chunks_adssnr";
-const AZURE_ENDPOINT = "";
+const AZURE_ENDPOINT = "https://codeagentsearch01.search.windows.net";
 const AZURE_API_KEY = "";
 const DENSE_VECTOR_SIZE = 3072; // OpenAI text-embedding-3-small dimension
 
@@ -73,10 +76,6 @@ async function main() {
   console.log("=====================================");
 
   // Initialize Azure AI Search client
-  const azureClient = new AzureAISearchVectorDatabase({
-    endpoint: AZURE_ENDPOINT,
-    apiKey: AZURE_API_KEY,
-  });
 
   try {
     /*
@@ -130,34 +129,65 @@ async function main() {
     */
 
     // Step 4: Search for records
-    const queryText = "How does queeneaggregator used in JennyA?";
-    const queryEmbedding = await generateEmbedding(queryText);
-
-    console.log("\n🔍 Step 4: Searching for records...");
-
-    const searchResults = await azureClient.search(
-      COLLECTION_NAME,
-      queryEmbedding,
-      {
-        topK: 30,
-        queryText: queryText,
-        type: "hybrid",
-      }
-    );
-
-    console.log(
-      `✅ Found ${searchResults.length} vector results for query: "${queryText}"`
-    );
-    searchResults.forEach((result, index) => {
-      console.log(
-        `  ${index + 1}. ${result.document.relativePath
-        } (score: ${result.score.toFixed(4)}), rerank_score: ${result.rerankScore} line: ${result.document.startLine
-        } - ${result.document.endLine}`
-      );
-      console.log(
-        `     Content: ${result.document.content.substring(0, 100)}...`
-      );
+    const queryText = "what is biscoring configuation";
+    var codeSplitter = new AstCodeSplitter(20000, 300);
+    let embedding = new AzureOpenAIEmbedding({
+      codeAgentEmbEndpoint: "http://localhost:8000",
     });
+    const azureClient = new AzureAISearchVectorDatabase({
+      endpoint: AZURE_ENDPOINT,
+      apiKey: AZURE_API_KEY,
+      apiVersion: "2025-08-01-preview",
+    });
+
+    let context = new Context({
+      embedding,
+      vectorDatabase: azureClient,
+      codeSplitter,
+      supportedExtensions: [".cs", ".js", ".py", ".cpp", ".h"],
+      ignorePatterns: [],
+      isHybrid: true,
+    });
+
+    const results: SemanticSearchResult[] = await context.semanticSearch(
+      queryText,
+      "d:/src/simple_repo",
+      30,
+      0.3,
+      undefined,
+      "simple_repo",
+      true
+    );
+
+    console.log(results);
+
+    // console.log("\n🔍 Step 4: Searching for records...");
+
+    // const searchResults = await azureClient.search(
+    //   COLLECTION_NAME,
+    //   queryEmbedding,
+    //   {
+    //     topK: 30,
+    //     queryText: queryText,
+    //     type: "hybrid",
+    //   }
+    // );
+
+    // console.log(
+    //   `✅ Found ${searchResults.length} vector results for query: "${queryText}"`
+    // );
+    // searchResults.forEach((result, index) => {
+    //   console.log(
+    //     `  ${index + 1}. ${
+    //       result.document.relativePath
+    //     } (score: ${result.score.toFixed(4)}), rerank_score: ${
+    //       result.rerankScore
+    //     } line: ${result.document.startLine} - ${result.document.endLine}`
+    //   );
+    //   console.log(
+    //     `     Content: ${result.document.content.substring(0, 100)}...`
+    //   );
+    // });
 
     /*
     // Step 5: Delete record by relativePath

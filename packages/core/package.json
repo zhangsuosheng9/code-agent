@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@azure/identity": "^4.12.0",
     "@azure/search-documents": "^12.1.0",
     "@chroma-core/default-embed": "^0.1.8",
     "@google/genai": "^1.9.0",

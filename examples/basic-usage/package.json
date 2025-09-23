@@ -15,6 +15,7 @@
     "@suoshengzhang/claude-context-core": "workspace:*",
     "@types/chokidar": "^2.1.7",
     "axios": "^1.6.0",
+    "@azure/search-documents": "^12.1.0",
     "chokidar": "^4.0.3",
     "chromadb": "^3.0.14"
   },
