@@ -24,9 +24,10 @@ export class SyncManager {
     serverSnapshot: any,
     gitRepoName: string
   ): Promise<void> {
+    const collectionName = this.context.getCollectionName(codebasePath);
     const relativeFilePaths = await this.context
       .getVectorDatabase()
-      .listFilePaths(this.context.getCollectionName(codebasePath), 1024);
+      .listFilePaths(collectionName, 1024);
     const oldFileHashes = this.context
       .getSynchronizer(codebasePath)
       ?.getFileHashes();
@@ -59,10 +60,7 @@ export class SyncManager {
 
       // If hashes match, delete chunks since file is unchanged
       if (newHash && newHash === oldHash) {
-        await this.context.deleteFileChunks(
-          `code_chunks_${gitRepoName}`,
-          relativePath
-        );
+        await this.context.deleteFileChunks(collectionName, relativePath);
         totalDeleted++;
       }
     }
@@ -318,7 +316,7 @@ export class SyncManager {
       const logId = String(Date.now());
       console.log(`[SYNC-DEBUG][${logId}] Executing scheduled periodic sync`);
       this.handleSyncIndex(logId);
-    }, 1 * 60 * 1000); // every 5 minutes
+    }, 5 * 60 * 1000); // every 5 minutes
 
     console.log(
       "[SYNC-DEBUG] Background sync setup complete. Interval ID:",

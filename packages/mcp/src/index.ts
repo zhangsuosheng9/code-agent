@@ -20,17 +20,17 @@ function getTimePrefix() {
   return new Date().toISOString();
 }
 
-console.log = (...args: any[]) => {
-  const prefix = `[${getTimePrefix()}]`;
-  logStream.write(`${prefix} [LOG] ${args.join(" ")}\n`);
-  process.stderr.write(`${prefix} [LOG] ${args.join(" ")}\n`);
-};
+// console.log = (...args: any[]) => {
+//   const prefix = `[${getTimePrefix()}]`;
+//   logStream.write(`${prefix} [LOG] ${args.join(" ")}\n`);
+//   process.stderr.write(`${prefix} [LOG] ${args.join(" ")}\n`);
+// };
 
-console.warn = (...args: any[]) => {
-  const prefix = `[${getTimePrefix()}]`;
-  logStream.write(`${prefix} [WARN] ${args.join(" ")}\n`);
-  process.stderr.write(`${prefix} [WARN] ${args.join(" ")}\n`);
-};
+// console.warn = (...args: any[]) => {
+//   const prefix = `[${getTimePrefix()}]`;
+//   logStream.write(`${prefix} [WARN] ${args.join(" ")}\n`);
+//   process.stderr.write(`${prefix} [WARN] ${args.join(" ")}\n`);
+// };
 
 // console.error already goes to stderr by default
 
@@ -40,8 +40,11 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { AzureAISearchVectorDatabase, Context } from "@suoshengzhang/claude-context-core";
-import { MilvusVectorDatabase } from "@suoshengzhang/claude-context-core";
+import {
+  AzureAISearchVectorDatabase,
+  Context,
+  getAISearchKey,
+} from "@suoshengzhang/claude-context-core";
 
 // Import our modular components
 import {
@@ -57,8 +60,6 @@ import {
 import { SnapshotManager } from "./snapshot.js";
 import { SyncManager } from "./sync.js";
 import { ToolHandlers } from "./handlers.js";
-import { ChromaVectorDatabase } from "@suoshengzhang/claude-context-core";
-import { ChromaManager } from "./chroma-manager.js";
 
 class ContextMcpServer {
   private server: Server;
@@ -92,15 +93,12 @@ class ContextMcpServer {
     logEmbeddingProviderInfo(config, embedding);
 
     // Initialize vector database
-    /*
-    let vectorDatabase = new ChromaVectorDatabase({
-      host: config.chromaAddress,
-      port: config.chromaPort,
-    });
-    */
     let vectorDatabase = new AzureAISearchVectorDatabase({
-      endpoint: config.azureOpenAIEndpoint ? config.azureOpenAIEndpoint : "",
-      apiKey: config.azureOpenAIApiKey ? config.azureOpenAIApiKey : "",
+      endpoint: config.aiSearchEndpoint ? config.aiSearchEndpoint : "",
+      apiKey: config.aiSearchApiKey ? config.aiSearchApiKey : "",
+      apiVersion: config.aiSearchApiVersion
+        ? config.aiSearchApiVersion
+        : "2025-08-01-preview",
     });
 
     // Initialize Claude Context
@@ -108,7 +106,7 @@ class ContextMcpServer {
       embedding,
       vectorDatabase,
       codeAgentEndpoint: config.codeAgentEmbEndpoint,
-      isHybrid: true
+      isHybrid: true,
     });
 
     // Initialize managers
@@ -235,8 +233,7 @@ This tool is versatile and can be used before completing various tasks to retrie
                 },
                 enableHybrid: {
                   type: "boolean",
-                  description:
-                    "If enable hybrid search",
+                  description: "If enable hybrid search",
                 },
               },
               required: ["query"],
@@ -309,26 +306,8 @@ This tool is versatile and can be used before completing various tasks to retrie
 
     // Start background sync after server is connected
     console.log("[SYNC-DEBUG] Initializing background sync...");
-    //this.syncManager.startBackgroundSync();
+    this.syncManager.startBackgroundSync();
     console.log("[SYNC-DEBUG] MCP server initialization complete");
-  }
-}
-
-async function initializeConfigAndChroma(config: ContextMcpConfig) {
-  // Initialize Chroma manager (will be done in start() method)
-  const chromaManager = new ChromaManager(config.chromaWorkingDir || "");
-
-  // Initialize and start Chroma process
-  console.log("[CHROMA] Initializing Chroma manager, engine: ");
-  try {
-    await chromaManager.start();
-    console.log("[CHROMA] Chroma process started successfully");
-  } catch (error) {
-    console.error(
-      "[CHROMA] Failed to initialize or start Chroma process:",
-      error
-    );
-    throw error;
   }
 }
 
@@ -349,9 +328,8 @@ async function main() {
   const config = createMcpConfig();
   logConfigurationSummary(config);
 
-  // Initialize Chroma manager and start Chroma process
-  //await initializeConfigAndChroma(config);
-
+  const aiSearchKey = await getAISearchKey(config.codeAgentEmbEndpoint);
+  config.aiSearchApiKey = aiSearchKey;
   const server = new ContextMcpServer(config);
   await server.start();
 }

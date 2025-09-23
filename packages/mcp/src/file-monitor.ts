@@ -1,8 +1,8 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import { FSWatcher, watch } from 'chokidar';
-import { Context } from '@suoshengzhang/claude-context-core';
-import { matchesIgnorePattern } from '@suoshengzhang/claude-context-core';
+import * as fs from "fs";
+import * as path from "path";
+import { FSWatcher, watch } from "chokidar";
+import { Context } from "@suoshengzhang/claude-context-core";
+import { matchesIgnorePattern } from "@suoshengzhang/claude-context-core";
 
 // Simple semaphore implementation for thread safety
 class Semaphore {
@@ -35,7 +35,7 @@ class Semaphore {
 }
 
 export interface FileChangeEvent {
-  type: 'add' | 'change';
+  type: "add" | "change";
   filename: string;
   fullPath: string;
   timestamp: Date;
@@ -55,7 +55,7 @@ export class ProjectFileMonitor {
   private context: Context;
   private codebasePath: string;
   private isProcessRunning = false;
-  
+
   // Queue-based file change tracking
   private fileChangeQueue: Set<string> = new Set(); // Using Set for automatic deduplication
   private queueSemaphore: Semaphore = new Semaphore(1);
@@ -64,7 +64,7 @@ export class ProjectFileMonitor {
   constructor(options: MonitorOptions, context: Context, codebasePath: string) {
     this.options = {
       queueProcessInterval: 3000, // Default 2 seconds
-      ...options
+      ...options,
     };
     this.context = context;
     this.codebasePath = codebasePath;
@@ -103,7 +103,9 @@ export class ProjectFileMonitor {
       changedFiles = Array.from(this.fileChangeQueue);
       // Clear the queue after processing
       this.fileChangeQueue.clear();
-      console.log(`[FileMonitor] Queue cleared. Processed ${changedFiles.length} files.`);
+      console.log(
+        `[FileMonitor] Queue cleared. Processed ${changedFiles.length} files.`
+      );
     } finally {
       this.queueSemaphore.release();
     }
@@ -115,22 +117,28 @@ export class ProjectFileMonitor {
 
     // update the file hash in snapshot manager to avoid re-indexing
     try {
-      await this.context.getSynchronizer(this.codebasePath)?.updateFileHashes(changedFiles);
+      await this.context
+        .getSynchronizer(this.codebasePath)
+        ?.updateFileHashes(changedFiles);
     } catch (error) {
       console.error(`[FileMonitor] Failed to update file hashes:`, error);
     }
 
     try {
       const collectionName = this.context.getCollectionName(this.codebasePath);
-      if (!await this.context.getVectorDatabase().hasCollection(collectionName)) {
+      if (
+        !(await this.context.getVectorDatabase().hasCollection(collectionName))
+      ) {
         console.log(`[FileMonitor] Index does not exist for ${collectionName}`);
         return;
       }
 
       for (const filePath of changedFiles) {
         const relativePath = path.relative(this.codebasePath, filePath);
-        const normalizedPath = relativePath.replace(/\//g, '\\');
-        console.log(`[FileMonitor] Deleting file chunks for ${normalizedPath}`);
+        const normalizedPath = relativePath.replace(/\//g, "\\");
+        console.log(
+          `[FileMonitor] Deleting file chunks for ${normalizedPath}, collectionName: ${collectionName}`
+        );
         this.context.deleteFileChunks(collectionName, normalizedPath);
       }
 
@@ -138,7 +146,9 @@ export class ProjectFileMonitor {
         changedFiles,
         this.codebasePath,
         (filePath, fileIndex, totalFiles) => {
-            console.log(`[FileMonitor] Indexed ${filePath} (${fileIndex}/${totalFiles})`);
+          console.log(
+            `[FileMonitor] Indexed ${filePath} (${fileIndex}/${totalFiles})`
+          );
         }
       );
     } finally {
@@ -159,7 +169,9 @@ export class ProjectFileMonitor {
       await this.processQueue();
     }, interval);
 
-    console.log(`[FileMonitor] Queue processor started with ${interval}ms interval`);
+    console.log(
+      `[FileMonitor] Queue processor started with ${interval}ms interval`
+    );
   }
 
   /**
@@ -169,14 +181,18 @@ export class ProjectFileMonitor {
     if (this.queueProcessorInterval) {
       clearInterval(this.queueProcessorInterval);
       this.queueProcessorInterval = null;
-      console.log('[FileMonitor] Queue processor stopped');
+      console.log("[FileMonitor] Queue processor stopped");
     }
   }
 
   /**
    * Debounced file change handler - now adds to queue instead of immediate callback
    */
-  private handleFileChange(eventType: 'add' | 'change', filePath: string, stats?: fs.Stats): void {
+  private handleFileChange(
+    eventType: "add" | "change",
+    filePath: string,
+    stats?: fs.Stats
+  ): void {
     this.addToQueue(filePath);
   }
 
@@ -184,18 +200,22 @@ export class ProjectFileMonitor {
     // Ignore files that don't match configured source extensions
     // Skip if path is not a file
     try {
-        const stats = fs.statSync(filePath);
-        if (stats.isFile()) {
-            const ext = path.extname(filePath);
-            if (!this.context.getSupportedExtensions().includes(ext)) {
-                return true;
-            }
+      const stats = fs.statSync(filePath);
+      if (stats.isFile()) {
+        const ext = path.extname(filePath);
+        if (!this.context.getSupportedExtensions().includes(ext)) {
+          return true;
         }
+      }
     } catch (err) {
-        // If we can't stat the path, ignore it
-        return true;
+      // If we can't stat the path, ignore it
+      return true;
     }
-    return matchesIgnorePattern(filePath, this.codebasePath, this.context.getIgnorePatterns());
+    return matchesIgnorePattern(
+      filePath,
+      this.codebasePath,
+      this.context.getIgnorePatterns()
+    );
   }
 
   /**
@@ -203,7 +223,7 @@ export class ProjectFileMonitor {
    */
   start(): void {
     if (this.isWatching) {
-      console.warn('[FileMonitor] File monitor is already running');
+      console.warn("[FileMonitor] File monitor is already running");
       return;
     }
 
@@ -215,21 +235,37 @@ export class ProjectFileMonitor {
 
       const stats = fs.statSync(this.codebasePath);
       if (!stats.isDirectory()) {
-        throw new Error(`Project path is not a directory: ${this.codebasePath}`);
+        throw new Error(
+          `Project path is not a directory: ${this.codebasePath}`
+        );
       }
 
-      console.log(`[FileMonitor] Starting file monitor for: ${this.codebasePath}`);
-      console.log(`[FileMonitor] Watching for source files with extensions: ${this.context.getSupportedExtensions().join(', ')}`);
-      console.log(`[FileMonitor] Ignoring patterns: ${this.context.getIgnorePatterns().length} patterns configured`);
+      console.log(
+        `[FileMonitor] Starting file monitor for: ${this.codebasePath}`
+      );
+      console.log(
+        `[FileMonitor] Watching for source files with extensions: ${this.context
+          .getSupportedExtensions()
+          .join(", ")}`
+      );
+      console.log(
+        `[FileMonitor] Ignoring patterns: ${
+          this.context.getIgnorePatterns().length
+        } patterns configured`
+      );
 
       // Create chokidar watcher with optimized settings
       this.watcher = watch(this.codebasePath, {
-        ignored: [(val: string, stats?: fs.Stats): boolean => {return this.ignoreFile(val);}],
+        ignored: [
+          (val: string, stats?: fs.Stats): boolean => {
+            return this.ignoreFile(val);
+          },
+        ],
         persistent: true,
         ignoreInitial: true, // Don't trigger events for existing files on startup
         awaitWriteFinish: {
           stabilityThreshold: 100, // Wait 100ms after file stops changing
-          pollInterval: 100 // Check every 100ms
+          pollInterval: 100, // Check every 100ms
         },
         usePolling: this.options.usePolling,
         interval: this.options.pollingInterval,
@@ -243,27 +279,28 @@ export class ProjectFileMonitor {
 
       // Set up event handlers
       this.watcher
-        .on('add', (filePath, stats) => {
-          this.handleFileChange('add', filePath, stats);
+        .on("add", (filePath, stats) => {
+          this.handleFileChange("add", filePath, stats);
         })
-        .on('change', (filePath, stats) => {
-          this.handleFileChange('change', filePath, stats);
+        .on("change", (filePath, stats) => {
+          this.handleFileChange("change", filePath, stats);
         })
-        .on('error', (error) => {
-          console.error('[FileMonitor] File watcher error:', error);
+        .on("error", (error) => {
+          console.error("[FileMonitor] File watcher error:", error);
         })
-        .on('ready', () => {
-          console.log('[FileMonitor] File monitor is ready and watching for changes');
+        .on("ready", () => {
+          console.log(
+            "[FileMonitor] File monitor is ready and watching for changes"
+          );
         });
 
       // Start the queue processor
       this.startQueueProcessor();
       this.isWatching = true;
 
-      console.log('[FileMonitor] File monitor started successfully');
-
+      console.log("[FileMonitor] File monitor started successfully");
     } catch (error) {
-      console.error('[FileMonitor] Failed to start file monitor:', error);
+      console.error("[FileMonitor] Failed to start file monitor:", error);
       throw error;
     }
   }
@@ -289,7 +326,7 @@ export class ProjectFileMonitor {
     this.fileChangeQueue.clear();
 
     this.isWatching = false;
-    console.log('[FileMonitor] File monitor stopped');
+    console.log("[FileMonitor] File monitor stopped");
   }
 
   /**
@@ -321,7 +358,7 @@ export class ProjectFileMonitor {
     try {
       return {
         size: this.fileChangeQueue.size,
-        files: Array.from(this.fileChangeQueue)
+        files: Array.from(this.fileChangeQueue),
       };
     } finally {
       this.queueSemaphore.release();

@@ -1,7 +1,6 @@
 import {
   VectorDocument,
   SearchOptions,
-  VectorSearchResult,
   VectorDatabase,
   HybridSearchRequest,
   HybridSearchOptions,
@@ -16,11 +15,7 @@ import {
   SearchField,
   VectorSearch,
   VectorSearchAlgorithmConfiguration,
-  VectorSearchProfile,
   SemanticSearch,
-  SemanticConfiguration,
-  SearchOptions as AzureSearchOptions,
-  VectorQuery,
 } from "@azure/search-documents";
 import axios from "axios";
 
@@ -40,10 +35,7 @@ export class AzureAISearchVectorDatabase implements VectorDatabase {
   protected initializationPromise: Promise<void>;
 
   constructor(config: AzureAISearchConfig) {
-    this.config = {
-      apiVersion: "2024-07-01", // Stable version with vector search support
-      ...config,
-    };
+    this.config = config;
 
     // Validate required configuration
     if (!this.config.endpoint || !this.config.apiKey) {
@@ -89,7 +81,11 @@ export class AzureAISearchVectorDatabase implements VectorDatabase {
     return new SearchClient(finalEndpoint, indexName, credential);
   }
 
-  private async sendHttpRequest(collectionName: string, queryVector: number[], options?: SearchOptions) {
+  private async sendHttpRequest(
+    collectionName: string,
+    queryVector: number[],
+    options?: SearchOptions
+  ) {
     const endpoint = this.config.endpoint.replace(/\/$/, "");
     const finalEndpoint = endpoint.startsWith("https://")
       ? endpoint
@@ -107,20 +103,22 @@ export class AzureAISearchVectorDatabase implements VectorDatabase {
             kind: "vector",
             k: topK,
             fields: "contentVector",
-          }
+          },
         ],
-        select: "id,content,relativePath,startLine,endLine,fileExtension,metadata",
+        select:
+          "id,content,relativePath,startLine,endLine,fileExtension,metadata",
         top: topK,
-      }
+      };
     } else if (options?.type === "text") {
       data = {
         queryType: "simple",
         searchMode: "any",
         search: options?.queryText || "",
         searchFields: "content",
-        select: "id,content,relativePath,startLine,endLine,fileExtension,metadata",
+        select:
+          "id,content,relativePath,startLine,endLine,fileExtension,metadata",
         top: topK,
-      }
+      };
     } else if (options?.type === "hybrid") {
       data = {
         vectorQueries: [
@@ -129,19 +127,21 @@ export class AzureAISearchVectorDatabase implements VectorDatabase {
             kind: "vector",
             k: topK,
             fields: "contentVector",
-          }
+          },
         ],
         queryType: "semantic",
         searchFields: "content",
-        select: "id,content,relativePath,startLine,endLine,fileExtension,metadata",
+        select:
+          "id,content,relativePath,startLine,endLine,fileExtension,metadata",
         top: topK,
         searchMode: "any",
         semanticConfiguration: "content_rank",
         search: options?.queryText || "",
-      }
-    }
-    else {
-      throw new Error("Invalid search type - must be 'vector', 'text', or 'hybrid'");
+      };
+    } else {
+      throw new Error(
+        "Invalid search type - must be 'vector', 'text', or 'hybrid'"
+      );
     }
 
     if (options?.filterExpr && options.filterExpr.trim().length > 0) {
@@ -151,12 +151,12 @@ export class AzureAISearchVectorDatabase implements VectorDatabase {
     const httpParams = {
       method: "POST",
       url: `${finalEndpoint}/indexes/${lowerCaseCollectionName}/docs/search`,
-      params: { 'api-version': this.config.apiVersion || '2024-07-01' },
+      params: { "api-version": this.config.apiVersion || "2024-07-01" },
       headers: {
-        'Content-Type': 'application/json',
-        'api-key': this.config.apiKey,
+        "Content-Type": "application/json",
+        "api-key": this.config.apiKey,
       },
-      data: data
+      data: data,
     };
 
     const response = await axios.request(httpParams);
@@ -164,7 +164,6 @@ export class AzureAISearchVectorDatabase implements VectorDatabase {
     const results: any[] = [];
 
     for (const result of response.data.value) {
-
       let metadata = {};
       try {
         metadata = JSON.parse(result.metadata || "{}");
@@ -238,7 +237,7 @@ export class AzureAISearchVectorDatabase implements VectorDatabase {
           {
             name: "relativePath",
             type: "Edm.String",
-            searchable: false,
+            searchable: true,
             filterable: true,
             sortable: false,
             facetable: false,
@@ -301,12 +300,25 @@ export class AzureAISearchVectorDatabase implements VectorDatabase {
             } as any,
           ],
         } as VectorSearch,
+        semanticSearch: {
+          defaultConfigurationName: "content_rank",
+          configurations: [
+            {
+              name: "content_rank",
+              prioritizedFields: {
+                titleField: undefined,
+                contentFields: [
+                  {
+                    name: "content",
+                  },
+                ],
+                keywordsFields: [],
+              },
+            },
+          ],
+        } as SemanticSearch,
       };
 
-      console.log(
-        "🔍 Creating index with schema:",
-        JSON.stringify(indexSchema, null, 2)
-      );
       await this.indexClient.createOrUpdateIndex(indexSchema);
       console.log(`✅ Created Azure AI Search index: ${collectionName}`);
     } catch (error: any) {
@@ -354,25 +366,31 @@ export class AzureAISearchVectorDatabase implements VectorDatabase {
       ? endpoint
       : `https://${endpoint}`;
     let lowerCaseCollectionName = collectionName.toLowerCase();
-    const url = `${finalEndpoint}/indexes/${lowerCaseCollectionName}?api-version=${this.config.apiVersion || '2024-07-01'}`;
+    const url = `${finalEndpoint}/indexes/${lowerCaseCollectionName}?api-version=${
+      this.config.apiVersion || "2024-07-01"
+    }`;
 
     try {
       const res = await axios.get(url, {
         headers: {
-          'api-key': this.config.apiKey
+          "api-key": this.config.apiKey,
         },
-        validateStatus: (status: number) => true
+        validateStatus: (status: number) => true,
       });
       if (res.status === 200) {
         return true;
-      } else if (res.status === 404) {
-        throw new Error(`Collection '${collectionName}' does not exist`);
       } else {
-        throw new Error(`Failed to check collection existence: ${res.status} ${res.data}`);
+        console.log(
+          `Failed to check collection existence: ${res.status} ${res.data}`
+        );
+        return false;
       }
     } catch (error) {
       if (error instanceof Error) {
-        console.error(`❌ Failed to check collection existence:`, error.message);
+        console.error(
+          `❌ Failed to check collection existence:`,
+          error.message
+        );
       } else {
         console.error(`❌ Failed to check collection existence:`, error);
       }
@@ -400,6 +418,7 @@ export class AzureAISearchVectorDatabase implements VectorDatabase {
     collectionName: string,
     documents: VectorDocument[]
   ): Promise<void> {
+    console.log("🔍 Inserting documents into index: " + collectionName);
     await this.ensureInitialized();
     let lowerCaseCollectionName = collectionName.toLowerCase();
     try {
@@ -489,16 +508,17 @@ export class AzureAISearchVectorDatabase implements VectorDatabase {
     await this.ensureInitialized();
     let lowerCaseCollectionName = collectionName.toLowerCase();
     try {
-      const searchOptions: any = {
+      const searchClient = this.getSearchClient(lowerCaseCollectionName);
+      const searchOptions = {
         filter: filter,
         select: outputFields,
         top: limit || 16384,
+        includeTotalCount: true,
       };
 
-      const searchClient = this.getSearchClient(lowerCaseCollectionName);
-      const searchResults = await searchClient.search("", searchOptions);
-
+      const searchResults = await searchClient.search("*", searchOptions);
       const results: Record<string, any>[] = [];
+
       for await (const result of searchResults.results) {
         results.push(result.document);
       }

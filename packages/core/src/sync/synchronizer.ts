@@ -1,392 +1,455 @@
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import * as crypto from 'crypto';
-import { MerkleDAG } from './merkle';
-import * as os from 'os';
-import { simpleGlobMatch } from '../utils';
+import * as fs from "fs/promises";
+import * as path from "path";
+import * as crypto from "crypto";
+import { MerkleDAG } from "./merkle";
+import * as os from "os";
+import { simpleGlobMatch } from "../utils";
 
 export class FileSynchronizer {
-    private fileHashes: Map<string, string>;
-    private merkleDAG: MerkleDAG;
-    private rootDir: string;
-    private snapshotPath: string;
-    private ignorePatterns: string[];
-    private supportedExtensions: string[];
+  private fileHashes: Map<string, string>;
+  private merkleDAG: MerkleDAG;
+  private rootDir: string;
+  private snapshotPath: string;
+  private ignorePatterns: string[];
+  private supportedExtensions: string[];
 
-    constructor(rootDir: string, ignorePatterns: string[] = [], supportedExtensions: string[] = []) {
-        this.rootDir = rootDir;
-        this.snapshotPath = this.getSnapshotPath(rootDir);
-        this.fileHashes = new Map();
-        this.merkleDAG = new MerkleDAG();
-        this.ignorePatterns = ignorePatterns;
-        this.supportedExtensions = supportedExtensions;
+  constructor(
+    rootDir: string,
+    ignorePatterns: string[] = [],
+    supportedExtensions: string[] = []
+  ) {
+    this.rootDir = rootDir;
+    this.snapshotPath = this.getSnapshotPath(rootDir);
+    this.fileHashes = new Map();
+    this.merkleDAG = new MerkleDAG();
+    this.ignorePatterns = ignorePatterns;
+    this.supportedExtensions = supportedExtensions;
+  }
+
+  private getSnapshotPath(codebasePath: string): string {
+    const homeDir = os.homedir();
+    const merkleDir = path.join(homeDir, ".context", "merkle");
+
+    const normalizedPath = path.resolve(codebasePath);
+    const hash = crypto.createHash("md5").update(normalizedPath).digest("hex");
+
+    return path.join(merkleDir, `${hash}.json`);
+  }
+
+  private async hashFile(filePath: string): Promise<string> {
+    // Double-check that this is actually a file, not a directory
+    const stat = await fs.stat(filePath);
+    if (stat.isDirectory()) {
+      throw new Error(`Attempted to hash a directory: ${filePath}`);
     }
 
-    private getSnapshotPath(codebasePath: string): string {
-        const homeDir = os.homedir();
-        const merkleDir = path.join(homeDir, '.context', 'merkle');
+    // For faster change detection, use file metadata instead of content
+    // Combine size and mtime for a quick "hash"
+    const quickHash = crypto
+      .createHash("md5")
+      .update(stat.size.toString())
+      .digest("hex");
 
-        const normalizedPath = path.resolve(codebasePath);
-        const hash = crypto.createHash('md5').update(normalizedPath).digest('hex');
+    return quickHash;
+  }
 
-        return path.join(merkleDir, `${hash}.json`);
+  private async generateFileHashes(dir: string): Promise<Map<string, string>> {
+    const fileHashes = new Map<string, string>();
+
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch (error: any) {
+      console.warn(`Cannot read directory ${dir}: ${error.message}`);
+      return fileHashes;
     }
 
-    private async hashFile(filePath: string): Promise<string> {
-        // Double-check that this is actually a file, not a directory
-        const stat = await fs.stat(filePath);
-        if (stat.isDirectory()) {
-            throw new Error(`Attempted to hash a directory: ${filePath}`);
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      const relativePath = path.relative(this.rootDir, fullPath);
+
+      // Check if this path should be ignored BEFORE any file system operations
+      if (this.shouldIgnore(relativePath, entry.isDirectory())) {
+        continue; // Skip completely - no access at all
+      }
+
+      // Double-check with fs.stat to be absolutely sure about file type
+      let stat;
+      try {
+        stat = await fs.stat(fullPath);
+      } catch (error: any) {
+        console.warn(`Cannot stat ${fullPath}: ${error.message}`);
+        continue;
+      }
+
+      if (stat.isDirectory()) {
+        // Verify it's really a directory and not ignored
+        if (!this.shouldIgnore(relativePath, true)) {
+          const subHashes = await this.generateFileHashes(fullPath);
+          const entries = Array.from(subHashes.entries());
+          for (let i = 0; i < entries.length; i++) {
+            const [p, h] = entries[i];
+            fileHashes.set(p, h);
+          }
         }
+      } else if (stat.isFile()) {
+        // Verify it's really a file and not ignored
+        if (!this.shouldIgnore(relativePath, false)) {
+          try {
+            const ext = path.extname(fullPath);
+            if (this.supportedExtensions.includes(ext)) {
+              const hash = await this.hashFile(fullPath);
+              fileHashes.set(relativePath, hash);
+            }
+          } catch (error: any) {
+            console.warn(`Cannot hash file ${fullPath}: ${error.message}`);
+            continue;
+          }
+        }
+      }
+      // Skip other types (symlinks, etc.)
+    }
+    return fileHashes;
+  }
 
-        // For faster change detection, use file metadata instead of content
-        // Combine size and mtime for a quick "hash"
-        const quickHash = crypto.createHash('md5')
-            .update(stat.size.toString())
-            .digest('hex');
-
-        return quickHash;
+  private shouldIgnore(
+    relativePath: string,
+    isDirectory: boolean = false
+  ): boolean {
+    // Always ignore hidden files and directories (starting with .)
+    const pathParts = relativePath.split(path.sep);
+    if (pathParts.some((part) => part.startsWith("."))) {
+      return true;
     }
 
-    private async generateFileHashes(dir: string): Promise<Map<string, string>> {
-        const fileHashes = new Map<string, string>();
-
-        let entries;
-        try {
-            entries = await fs.readdir(dir, { withFileTypes: true });
-        } catch (error: any) {
-            console.warn(`Cannot read directory ${dir}: ${error.message}`);
-            return fileHashes;
-        }
-
-        for (const entry of entries) {
-            const fullPath = path.join(dir, entry.name);
-            const relativePath = path.relative(this.rootDir, fullPath);
-
-            // Check if this path should be ignored BEFORE any file system operations
-            if (this.shouldIgnore(relativePath, entry.isDirectory())) {
-                continue; // Skip completely - no access at all
-            }
-
-            // Double-check with fs.stat to be absolutely sure about file type
-            let stat;
-            try {
-                stat = await fs.stat(fullPath);
-            } catch (error: any) {
-                console.warn(`Cannot stat ${fullPath}: ${error.message}`);
-                continue;
-            }
-
-            if (stat.isDirectory()) {
-                // Verify it's really a directory and not ignored
-                if (!this.shouldIgnore(relativePath, true)) {
-                    const subHashes = await this.generateFileHashes(fullPath);
-                    const entries = Array.from(subHashes.entries());
-                    for (let i = 0; i < entries.length; i++) {
-                        const [p, h] = entries[i];
-                        fileHashes.set(p, h);
-                    }
-                }
-            } else if (stat.isFile()) {
-                // Verify it's really a file and not ignored
-                if (!this.shouldIgnore(relativePath, false)) {
-                    try {
-                        const ext = path.extname(fullPath);
-                        if (this.supportedExtensions.includes(ext)) {
-                            const hash = await this.hashFile(fullPath);
-                            fileHashes.set(relativePath, hash);
-                        }
-                    } catch (error: any) {
-                        console.warn(`Cannot hash file ${fullPath}: ${error.message}`);
-                        continue;
-                    }
-                }
-            }
-            // Skip other types (symlinks, etc.)
-        }
-        return fileHashes;
+    if (this.ignorePatterns.length === 0) {
+      return false;
     }
 
-    private shouldIgnore(relativePath: string, isDirectory: boolean = false): boolean {
-        // Always ignore hidden files and directories (starting with .)
-        const pathParts = relativePath.split(path.sep);
-        if (pathParts.some(part => part.startsWith('.'))) {
+    // Normalize path separators and remove leading/trailing slashes
+    const normalizedPath = relativePath
+      .replace(/\\/g, "/")
+      .replace(/^\/+|\/+$/g, "");
+
+    if (!normalizedPath) {
+      return false; // Don't ignore root
+    }
+
+    // Check direct pattern matches first
+    for (const pattern of this.ignorePatterns) {
+      if (this.matchPattern(normalizedPath, pattern, isDirectory)) {
+        return true;
+      }
+    }
+
+    // Check if any parent directory is ignored
+    const normalizedPathParts = normalizedPath.split("/");
+    for (let i = 0; i < normalizedPathParts.length; i++) {
+      const partialPath = normalizedPathParts.slice(0, i + 1).join("/");
+      for (const pattern of this.ignorePatterns) {
+        // Check directory patterns
+        if (pattern.endsWith("/")) {
+          const dirPattern = pattern.slice(0, -1);
+          if (
+            simpleGlobMatch(partialPath, dirPattern) ||
+            simpleGlobMatch(normalizedPathParts[i], dirPattern)
+          ) {
             return true;
+          }
         }
-
-        if (this.ignorePatterns.length === 0) {
-            return false;
+        // Check exact path patterns
+        else if (pattern.includes("/")) {
+          if (simpleGlobMatch(partialPath, pattern)) {
+            return true;
+          }
         }
-
-        // Normalize path separators and remove leading/trailing slashes
-        const normalizedPath = relativePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-
-        if (!normalizedPath) {
-            return false; // Don't ignore root
+        // Check filename patterns against any path component
+        else {
+          if (simpleGlobMatch(normalizedPathParts[i], pattern)) {
+            return true;
+          }
         }
-
-        // Check direct pattern matches first
-        for (const pattern of this.ignorePatterns) {
-            if (this.matchPattern(normalizedPath, pattern, isDirectory)) {
-                return true;
-            }
-        }
-
-        // Check if any parent directory is ignored
-        const normalizedPathParts = normalizedPath.split('/');
-        for (let i = 0; i < normalizedPathParts.length; i++) {
-            const partialPath = normalizedPathParts.slice(0, i + 1).join('/');
-            for (const pattern of this.ignorePatterns) {
-                // Check directory patterns
-                if (pattern.endsWith('/')) {
-                    const dirPattern = pattern.slice(0, -1);
-                    if (simpleGlobMatch(partialPath, dirPattern) ||
-                        simpleGlobMatch(normalizedPathParts[i], dirPattern)) {
-                        return true;
-                    }
-                }
-                // Check exact path patterns
-                else if (pattern.includes('/')) {
-                    if (simpleGlobMatch(partialPath, pattern)) {
-                        return true;
-                    }
-                }
-                // Check filename patterns against any path component
-                else {
-                    if (simpleGlobMatch(normalizedPathParts[i], pattern)) {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
+      }
     }
 
-    private matchPattern(filePath: string, pattern: string, isDirectory: boolean = false): boolean {
-        // Clean both path and pattern
-        const cleanPath = filePath.replace(/^\/+|\/+$/g, '');
-        const cleanPattern = pattern.replace(/^\/+|\/+$/g, '');
+    return false;
+  }
 
-        if (!cleanPath || !cleanPattern) {
-            return false;
-        }
+  private matchPattern(
+    filePath: string,
+    pattern: string,
+    isDirectory: boolean = false
+  ): boolean {
+    // Clean both path and pattern
+    const cleanPath = filePath.replace(/^\/+|\/+$/g, "");
+    const cleanPattern = pattern.replace(/^\/+|\/+$/g, "");
 
-        // Handle directory patterns (ending with /)
-        if (pattern.endsWith('/')) {
-            if (!isDirectory) return false; // Directory pattern only matches directories
-            const dirPattern = cleanPattern.slice(0, -1);
-
-            // Direct match or any path component matches
-            return simpleGlobMatch(cleanPath, dirPattern) ||
-                cleanPath.split('/').some(part => simpleGlobMatch(part, dirPattern));
-        }
-
-        // Handle path patterns (containing /)
-        if (cleanPattern.includes('/')) {
-            return simpleGlobMatch(cleanPath, cleanPattern);
-        }
-
-        // Handle filename patterns (no /) - match against basename
-        const fileName = path.basename(cleanPath);
-        return simpleGlobMatch(fileName, cleanPattern);
+    if (!cleanPath || !cleanPattern) {
+      return false;
     }
 
-    private buildMerkleDAG(fileHashes: Map<string, string>): MerkleDAG {
-        const dag = new MerkleDAG();
-        const keys = Array.from(fileHashes.keys());
-        const sortedPaths = keys.slice().sort(); // Create a sorted copy
+    // Handle directory patterns (ending with /)
+    if (pattern.endsWith("/")) {
+      if (!isDirectory) return false; // Directory pattern only matches directories
+      const dirPattern = cleanPattern.slice(0, -1);
 
-        // Create a root node for the entire directory
-        let valuesString = "";
-        console.log(`[${new Date().toLocaleString()}] Building Merkle DAG with ${keys.length} files.`);
-        keys.forEach(key => {
-            valuesString += fileHashes.get(key);
-        });
-        console.log(`[${new Date().toLocaleString()}] Combined hash string length: ${valuesString.length}`);
-        const rootNodeData = "root:" + valuesString;
-        const rootNodeId = dag.addNode(rootNodeData);
-
-        // Add each file as a child of the root
-        for (const path of sortedPaths) {
-            const fileData = path + ":" + fileHashes.get(path);
-            dag.addNode(fileData, rootNodeId);
-        }
-        console.log(`[${new Date().toLocaleString()}] Finish built Merkle DAG with root ID: ${rootNodeId}`);
-
-        return dag;
+      // Direct match or any path component matches
+      return (
+        simpleGlobMatch(cleanPath, dirPattern) ||
+        cleanPath.split("/").some((part) => simpleGlobMatch(part, dirPattern))
+      );
     }
 
-    public async initialize(serverSnapshot: any = null) {
-        console.log(`[${new Date().toLocaleString()}] Initializing file synchronizer for ${this.rootDir}, serverSnapshot: ${serverSnapshot}`);
-        await this.loadSnapshot(serverSnapshot);
-        this.merkleDAG = this.buildMerkleDAG(this.fileHashes);
-        console.log(`[${new Date().toLocaleString()}] File synchronizer initialized. Loaded ${this.fileHashes.size} file hashes.`);
+    // Handle path patterns (containing /)
+    if (cleanPattern.includes("/")) {
+      return simpleGlobMatch(cleanPath, cleanPattern);
     }
 
-    /**
-     * Update file hashes for given file paths
-     * @param filePaths List of file paths to update hashes for
-     */
-    public async updateFileHashes(filePaths: string[]): Promise<void> {
-        console.log(`[${new Date().toLocaleString()}] Updating file hashes for ${filePaths.length} files`);
-        
-        for (const filePath of filePaths) {
-            try {
-                const hash = await this.hashFile(filePath);
-                this.fileHashes.set(filePath, hash);
-            } catch (error) {
-                console.warn(`Failed to hash file ${filePath}:`, error);
-            }
-        }
+    // Handle filename patterns (no /) - match against basename
+    const fileName = path.basename(cleanPath);
+    return simpleGlobMatch(fileName, cleanPattern);
+  }
 
-        // Rebuild merkle DAG with updated hashes
-        this.merkleDAG = this.buildMerkleDAG(this.fileHashes);
-        
-        // Save updated snapshot
+  private buildMerkleDAG(fileHashes: Map<string, string>): MerkleDAG {
+    const dag = new MerkleDAG();
+    const keys = Array.from(fileHashes.keys());
+    const sortedPaths = keys.slice().sort(); // Create a sorted copy
+
+    // Create a root node for the entire directory
+    let valuesString = "";
+    console.log(
+      `[${new Date().toLocaleString()}] Building Merkle DAG with ${
+        keys.length
+      } files.`
+    );
+    keys.forEach((key) => {
+      valuesString += fileHashes.get(key);
+    });
+    console.log(
+      `[${new Date().toLocaleString()}] Combined hash string length: ${
+        valuesString.length
+      }`
+    );
+    const rootNodeData = "root:" + valuesString;
+    const rootNodeId = dag.addNode(rootNodeData);
+
+    // Add each file as a child of the root
+    for (const path of sortedPaths) {
+      const fileData = path + ":" + fileHashes.get(path);
+      dag.addNode(fileData, rootNodeId);
+    }
+    console.log(
+      `[${new Date().toLocaleString()}] Finish built Merkle DAG with root ID: ${rootNodeId}`
+    );
+
+    return dag;
+  }
+
+  public async initialize(serverSnapshot: any = null) {
+    console.log(
+      `[${new Date().toLocaleString()}] Initializing file synchronizer for ${
+        this.rootDir
+      }, serverSnapshot: ${serverSnapshot}`
+    );
+    await this.loadSnapshot(serverSnapshot);
+    this.merkleDAG = this.buildMerkleDAG(this.fileHashes);
+    console.log(
+      `[${new Date().toLocaleString()}] File synchronizer initialized. Loaded ${
+        this.fileHashes.size
+      } file hashes.`
+    );
+  }
+
+  /**
+   * Update file hashes for given file paths
+   * @param filePaths List of file paths to update hashes for
+   */
+  public async updateFileHashes(filePaths: string[]): Promise<void> {
+    console.log(
+      `[${new Date().toLocaleString()}] Updating file hashes for ${
+        filePaths.length
+      } files`
+    );
+
+    for (const filePath of filePaths) {
+      try {
+        const hash = await this.hashFile(filePath);
+        const relativePath = path.relative(this.rootDir, filePath);
+        this.fileHashes.set(relativePath, hash);
+      } catch (error) {
+        console.warn(`Failed to hash file ${filePath}:`, error);
+      }
+    }
+
+    // Rebuild merkle DAG with updated hashes
+    this.merkleDAG = this.buildMerkleDAG(this.fileHashes);
+
+    // Save updated snapshot
+    await this.saveSnapshot();
+
+    console.log(
+      `[${new Date().toLocaleString()}] Finished updating file hashes`
+    );
+  }
+
+  public async checkForChanges(): Promise<{
+    added: string[];
+    removed: string[];
+    modified: string[];
+  }> {
+    console.log("Checking for file changes...");
+
+    const newFileHashes = await this.generateFileHashes(this.rootDir);
+    const newMerkleDAG = this.buildMerkleDAG(newFileHashes);
+
+    // Compare the DAGs
+    const changes = MerkleDAG.compare(this.merkleDAG, newMerkleDAG);
+
+    // If there are any changes in the DAG, we should also do a file-level comparison
+    if (
+      changes.added.length > 0 ||
+      changes.removed.length > 0 ||
+      changes.modified.length > 0
+    ) {
+      console.log("Merkle DAG has changed. Comparing file states...");
+      const fileChanges = this.compareStates(this.fileHashes, newFileHashes);
+
+      this.fileHashes = newFileHashes;
+      this.merkleDAG = newMerkleDAG;
+      await this.saveSnapshot();
+
+      console.log(
+        `Found changes: ${fileChanges.added.length} added, ${fileChanges.removed.length} removed, ${fileChanges.modified.length} modified.`
+      );
+      return fileChanges;
+    }
+
+    console.log("No changes detected based on Merkle DAG comparison.");
+    return { added: [], removed: [], modified: [] };
+  }
+
+  private compareStates(
+    oldHashes: Map<string, string>,
+    newHashes: Map<string, string>
+  ): { added: string[]; removed: string[]; modified: string[] } {
+    const added: string[] = [];
+    const removed: string[] = [];
+    const modified: string[] = [];
+
+    const newEntries = Array.from(newHashes.entries());
+    for (let i = 0; i < newEntries.length; i++) {
+      const [file, hash] = newEntries[i];
+      if (!oldHashes.has(file)) {
+        added.push(file);
+      } else if (oldHashes.get(file) !== hash) {
+        modified.push(file);
+      }
+    }
+
+    const oldKeys = Array.from(oldHashes.keys());
+    for (let i = 0; i < oldKeys.length; i++) {
+      const file = oldKeys[i];
+      if (!newHashes.has(file)) {
+        removed.push(file);
+      }
+    }
+
+    return { added, removed, modified };
+  }
+
+  public getFileHash(filePath: string): string | undefined {
+    return this.fileHashes.get(filePath);
+  }
+
+  public getFileHashes(): Map<string, string> {
+    return this.fileHashes;
+  }
+
+  private async saveSnapshot(): Promise<void> {
+    const merkleDir = path.dirname(this.snapshotPath);
+    await fs.mkdir(merkleDir, { recursive: true });
+
+    // Convert Map to array without using iterator
+    const fileHashesArray: [string, string][] = [];
+    const keys = Array.from(this.fileHashes.keys());
+    keys.forEach((key) => {
+      fileHashesArray.push([key, this.fileHashes.get(key)!]);
+    });
+
+    const data = JSON.stringify({
+      fileHashes: fileHashesArray,
+      merkleDAG: this.merkleDAG.serialize(),
+    });
+    await fs.writeFile(this.snapshotPath, data, "utf-8");
+    console.log(`Saved snapshot to ${this.snapshotPath}`);
+  }
+
+  private async loadSnapshot(serverSnapshot: any = null): Promise<void> {
+    try {
+      let obj = null;
+      if (serverSnapshot) {
+        console.log(`Loaded snapshot from server`);
+        obj = serverSnapshot;
+      } else {
+        console.log(`Loaded snapshot from ${this.snapshotPath}`);
+        const data = await fs.readFile(this.snapshotPath, "utf-8");
+        obj = JSON.parse(data);
+      }
+
+      // Reconstruct Map without using constructor with iterator
+      this.fileHashes = new Map();
+      for (const [key, value] of obj.fileHashes) {
+        this.fileHashes.set(key, value);
+      }
+
+      if (obj.merkleDAG) {
+        this.merkleDAG = MerkleDAG.deserialize(obj.merkleDAG);
+      }
+
+      if (serverSnapshot) {
+        console.log(`Save server snapshot to ${this.snapshotPath}`);
         await this.saveSnapshot();
-        
-        console.log(`[${new Date().toLocaleString()}] Finished updating file hashes`);
+      }
+      console.log(`Loaded snapshot from ${this.snapshotPath}`);
+    } catch (error: any) {
+      if (error.code === "ENOENT") {
+        console.log(
+          `Snapshot file not found at ${this.snapshotPath}. Generating new one, ${this.rootDir}`
+        );
+        this.fileHashes = await this.generateFileHashes(this.rootDir);
+        this.merkleDAG = this.buildMerkleDAG(this.fileHashes);
+        await this.saveSnapshot();
+      } else {
+        throw error;
+      }
     }
+  }
 
-    public async checkForChanges(): Promise<{ added: string[], removed: string[], modified: string[] }> {
-        console.log('Checking for file changes...');
+  /**
+   * Delete snapshot file for a given codebase path
+   */
+  static async deleteSnapshot(codebasePath: string): Promise<void> {
+    const homeDir = os.homedir();
+    const merkleDir = path.join(homeDir, ".context", "merkle");
+    const normalizedPath = path.resolve(codebasePath);
+    const hash = crypto.createHash("md5").update(normalizedPath).digest("hex");
+    const snapshotPath = path.join(merkleDir, `${hash}.json`);
 
-        const newFileHashes = await this.generateFileHashes(this.rootDir);
-        const newMerkleDAG = this.buildMerkleDAG(newFileHashes);
-
-        // Compare the DAGs
-        const changes = MerkleDAG.compare(this.merkleDAG, newMerkleDAG);
-
-        // If there are any changes in the DAG, we should also do a file-level comparison
-        if (changes.added.length > 0 || changes.removed.length > 0 || changes.modified.length > 0) {
-            console.log('Merkle DAG has changed. Comparing file states...');
-            const fileChanges = this.compareStates(this.fileHashes, newFileHashes);
-
-            this.fileHashes = newFileHashes;
-            this.merkleDAG = newMerkleDAG;
-            await this.saveSnapshot();
-
-            console.log(`Found changes: ${fileChanges.added.length} added, ${fileChanges.removed.length} removed, ${fileChanges.modified.length} modified.`);
-            return fileChanges;
-        }
-
-        console.log('No changes detected based on Merkle DAG comparison.');
-        return { added: [], removed: [], modified: [] };
+    try {
+      await fs.unlink(snapshotPath);
+      console.log(`Deleted snapshot file: ${snapshotPath}`);
+    } catch (error: any) {
+      if (error.code === "ENOENT") {
+        console.log(
+          `Snapshot file not found (already deleted): ${snapshotPath}`
+        );
+      } else {
+        console.error(
+          `Failed to delete snapshot file ${snapshotPath}:`,
+          error.message
+        );
+        throw error; // Re-throw non-ENOENT errors
+      }
     }
-
-    private compareStates(oldHashes: Map<string, string>, newHashes: Map<string, string>): { added: string[], removed: string[], modified: string[] } {
-        const added: string[] = [];
-        const removed: string[] = [];
-        const modified: string[] = [];
-
-        const newEntries = Array.from(newHashes.entries());
-        for (let i = 0; i < newEntries.length; i++) {
-            const [file, hash] = newEntries[i];
-            if (!oldHashes.has(file)) {
-                added.push(file);
-            } else if (oldHashes.get(file) !== hash) {
-                modified.push(file);
-            }
-        }
-
-        const oldKeys = Array.from(oldHashes.keys());
-        for (let i = 0; i < oldKeys.length; i++) {
-            const file = oldKeys[i];
-            if (!newHashes.has(file)) {
-                removed.push(file);
-            }
-        }
-
-        return { added, removed, modified };
-    }
-
-    public getFileHash(filePath: string): string | undefined {
-        return this.fileHashes.get(filePath);
-    }
-
-    public getFileHashes(): Map<string, string> {
-        return this.fileHashes;
-    }
-
-    private async saveSnapshot(): Promise<void> {
-        const merkleDir = path.dirname(this.snapshotPath);
-        await fs.mkdir(merkleDir, { recursive: true });
-
-        // Convert Map to array without using iterator
-        const fileHashesArray: [string, string][] = [];
-        const keys = Array.from(this.fileHashes.keys());
-        keys.forEach(key => {
-            fileHashesArray.push([key, this.fileHashes.get(key)!]);
-        });
-
-        const data = JSON.stringify({
-            fileHashes: fileHashesArray,
-            merkleDAG: this.merkleDAG.serialize()
-        });
-        await fs.writeFile(this.snapshotPath, data, 'utf-8');
-        console.log(`Saved snapshot to ${this.snapshotPath}`);
-    }
-
-    private async loadSnapshot(serverSnapshot: any = null): Promise<void> {
-        try {
-            let obj = null;
-            if (serverSnapshot) {
-                console.log(`Loaded snapshot from server`);
-                obj = serverSnapshot;
-            } else {
-                console.log(`Loaded snapshot from ${this.snapshotPath}`);
-                const data = await fs.readFile(this.snapshotPath, 'utf-8');
-                obj = JSON.parse(data);
-            }
-
-            // Reconstruct Map without using constructor with iterator
-            this.fileHashes = new Map();
-            for (const [key, value] of obj.fileHashes) {
-                this.fileHashes.set(key, value);
-            }
-
-            if (obj.merkleDAG) {
-                this.merkleDAG = MerkleDAG.deserialize(obj.merkleDAG);
-            }
-
-            if (serverSnapshot) {
-                console.log(`Save server snapshot to ${this.snapshotPath}`);
-                await this.saveSnapshot();
-            }
-            console.log(`Loaded snapshot from ${this.snapshotPath}`);
-        } catch (error: any) {
-            if (error.code === 'ENOENT') {
-                console.log(`Snapshot file not found at ${this.snapshotPath}. Generating new one.`);
-                this.fileHashes = await this.generateFileHashes(this.rootDir);
-                this.merkleDAG = this.buildMerkleDAG(this.fileHashes);
-                await this.saveSnapshot();
-            } else {
-                throw error;
-            }
-        }
-    }
-
-    /**
-     * Delete snapshot file for a given codebase path
-     */
-    static async deleteSnapshot(codebasePath: string): Promise<void> {
-        const homeDir = os.homedir();
-        const merkleDir = path.join(homeDir, '.context', 'merkle');
-        const normalizedPath = path.resolve(codebasePath);
-        const hash = crypto.createHash('md5').update(normalizedPath).digest('hex');
-        const snapshotPath = path.join(merkleDir, `${hash}.json`);
-
-        try {
-            await fs.unlink(snapshotPath);
-            console.log(`Deleted snapshot file: ${snapshotPath}`);
-        } catch (error: any) {
-            if (error.code === 'ENOENT') {
-                console.log(`Snapshot file not found (already deleted): ${snapshotPath}`);
-            } else {
-                console.error(`Failed to delete snapshot file ${snapshotPath}:`, error.message);
-                throw error; // Re-throw non-ENOENT errors
-            }
-        }
-    }
+  }
 }

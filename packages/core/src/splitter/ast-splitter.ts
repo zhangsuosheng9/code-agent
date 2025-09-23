@@ -103,18 +103,19 @@ export class AstCodeSplitter implements Splitter {
     const langConfig = this.getLanguageConfig(language);
     if (!langConfig) {
       console.log(
-        `📝 Language ${language} not supported by AST, using LangChain splitter for: ${filePath || "unknown"
+        `📝 Language ${language} not supported by AST, using LangChain splitter for: ${
+          filePath || "unknown"
         }`
       );
       return await this.langchainFallback.split(code, language, filePath);
     }
 
     try {
-
       const tree = this.parseSourceCode(langConfig, code, language, filePath);
       if (!tree.rootNode) {
         console.warn(
-          `⚠️  Failed to parse AST for ${language}, falling back to LangChain: ${filePath || "unknown"
+          `⚠️  Failed to parse AST for ${language}, falling back to LangChain: ${
+            filePath || "unknown"
           }`
         );
         return await this.langchainFallback.split(code, language, filePath);
@@ -129,7 +130,7 @@ export class AstCodeSplitter implements Splitter {
         filePath
       );
 
-      // If chunks are too small, merge them together 
+      // If chunks are too small, merge them together
       const mergedChunks = await this.mergeSmallChunks(chunks);
       return mergedChunks;
     } catch (error) {
@@ -150,10 +151,18 @@ export class AstCodeSplitter implements Splitter {
     this.langchainFallback.setChunkOverlap(chunkOverlap);
   }
 
-  private parseSourceCode(langConfig: any, code: string, language: string, filePath?: string) {
-
+  private parseSourceCode(
+    langConfig: any,
+    code: string,
+    language: string,
+    filePath?: string
+  ) {
     const byteLen = Buffer.byteLength(code, "utf8");
-    console.log(`🌳 Using AST splitter for ${language} file: ${filePath || 'unknown'}, length ${byteLen} at ${new Date().toISOString()} `);
+    console.log(
+      `🌳 Using AST splitter for ${language} file: ${
+        filePath || "unknown"
+      }, length ${byteLen} at ${new Date().toISOString()} `
+    );
     this.parser.setLanguage(langConfig.parser);
 
     if (byteLen <= 30000) {
@@ -166,7 +175,6 @@ export class AstCodeSplitter implements Splitter {
       const end = Math.min(len, index + 30000);
       return code.slice(index, end);
     });
-
   }
 
   private getLanguageConfig(
@@ -284,14 +292,17 @@ export class AstCodeSplitter implements Splitter {
 
     for (let i = 1; i < chunks.length; i++) {
       const next = chunks[i];
-      const currentLineCount = current.metadata.endLine - current.metadata.startLine + 1;
+      const currentLineCount =
+        current.metadata.endLine - current.metadata.startLine + 1;
 
       if (currentLineCount < minLines) {
         current.content += "\n" + next.content;
         current.metadata.endLine = next.metadata.endLine;
         nodeTypeSet.add(next.metadata.nodeType || "");
       } else {
-        current.metadata.nodeType = Array.from(nodeTypeSet).filter(t => t).join(", ");
+        current.metadata.nodeType = Array.from(nodeTypeSet)
+          .filter((t) => t)
+          .join(", ");
         mergedChunks.push(current);
         current = { ...next };
         nodeTypeSet.clear();
