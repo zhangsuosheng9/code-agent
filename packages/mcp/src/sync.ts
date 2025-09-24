@@ -120,7 +120,7 @@ export class SyncManager {
           );
 
           this.fileWatcherMap.set(codebasePath, fileWatcher);
-          fileWatcher.start();
+          await fileWatcher.start();
         }
 
         console.log(

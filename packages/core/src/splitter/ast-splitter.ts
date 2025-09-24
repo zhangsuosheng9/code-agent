@@ -158,11 +158,6 @@ export class AstCodeSplitter implements Splitter {
     filePath?: string
   ) {
     const byteLen = Buffer.byteLength(code, "utf8");
-    console.log(
-      `🌳 Using AST splitter for ${language} file: ${
-        filePath || "unknown"
-      }, length ${byteLen} at ${new Date().toISOString()} `
-    );
     this.parser.setLanguage(langConfig.parser);
 
     if (byteLen <= 30000) {
