@@ -1,13 +1,6 @@
 import { Splitter, CodeChunk, AstCodeSplitter } from "./splitter";
-import { Embedding, OpenAIEmbedding, AzureOpenAIEmbedding } from "./embedding";
-import {
-  VectorDatabase,
-  VectorDocument,
-  VectorSearchResult,
-  HybridSearchRequest,
-  HybridSearchOptions,
-  HybridSearchResult,
-} from "./vectordb";
+import { Embedding, OpenAIEmbedding } from "./embedding";
+import { VectorDatabase, VectorDocument } from "./vectordb";
 import { SemanticSearchResult } from "./types";
 import { envManager } from "./utils/env-manager";
 import * as fs from "fs";
@@ -131,8 +124,6 @@ export interface ContextConfig {
   embedding?: Embedding;
   vectorDatabase?: VectorDatabase;
   codeSplitter?: Splitter;
-  supportedExtensions?: string[];
-  ignorePatterns?: string[];
   customExtensions?: string[]; // New: custom extensions from MCP
   customIgnorePatterns?: string[]; // New: custom ignore patterns from MCP
   codeAgentEndpoint?: string;
@@ -181,7 +172,6 @@ export class Context {
     // Combine default extensions with config extensions and env extensions
     const allSupportedExtensions = [
       ...DEFAULT_SUPPORTED_EXTENSIONS,
-      ...(config.supportedExtensions || []),
       ...(config.customExtensions || []),
       ...envCustomExtensions,
     ];
@@ -194,7 +184,6 @@ export class Context {
     // Start with default ignore patterns
     const allIgnorePatterns = [
       ...DEFAULT_IGNORE_PATTERNS,
-      ...(config.ignorePatterns || []),
       ...(config.customIgnorePatterns || []),
       ...envCustomIgnorePatterns,
     ];
@@ -251,13 +240,6 @@ export class Context {
   }
 
   /**
-   * Get ignore patterns
-   */
-  getIgnorePatterns(): string[] {
-    return [...this.ignorePatterns];
-  }
-
-  /**
    * Get code agent endpoint
    */
   getCodeAgentEndpoint(): string {
@@ -289,13 +271,6 @@ export class Context {
     synchronizer: FileSynchronizer
   ): void {
     this.synchronizers.set(collectionName, synchronizer);
-  }
-
-  /**
-   * Public wrapper for loadIgnorePatterns private method
-   */
-  async getLoadedIgnorePatterns(codebasePath: string): Promise<void> {
-    return this.loadIgnorePatterns(codebasePath);
   }
 
   /**
@@ -385,9 +360,6 @@ export class Context {
     console.log(
       `🚀 Starting to index codebase with ${searchType}: ${codebasePath}`
     );
-
-    // 1. Load ignore patterns from various ignore files
-    await this.loadIgnorePatterns(codebasePath);
 
     // 2. Check and prepare vector collection
     progressCallback?.({
@@ -489,13 +461,17 @@ export class Context {
     const synchronizer = this.synchronizers.get(collectionName);
 
     if (!synchronizer) {
-      // Load project-specific ignore patterns before creating FileSynchronizer
-      await this.loadIgnorePatterns(codebasePath);
+      const mergedIgnorePatterns = await this.loadIgnorePatterns(codebasePath);
+      console.log(
+        `Using ignore patterns in reindexByChange: ${mergedIgnorePatterns.join(
+          ", "
+        )}`
+      );
 
       // To be safe, let's initialize if it's not there.
       const newSynchronizer = new FileSynchronizer(
         codebasePath,
-        this.ignorePatterns,
+        mergedIgnorePatterns,
         this.supportedExtensions
       );
       await newSynchronizer.initialize();
@@ -901,22 +877,6 @@ export class Context {
   }
 
   /**
-   * Update ignore patterns (merges with default patterns and existing patterns)
-   * @param ignorePatterns Array of ignore patterns to add to defaults
-   */
-  updateIgnorePatterns(ignorePatterns: string[]): void {
-    // Merge with default patterns and any existing custom patterns, avoiding duplicates
-    const mergedPatterns = [...DEFAULT_IGNORE_PATTERNS, ...ignorePatterns];
-    const uniquePatterns: string[] = [];
-    const patternSet = new Set(mergedPatterns);
-    patternSet.forEach((pattern) => uniquePatterns.push(pattern));
-    this.ignorePatterns = uniquePatterns;
-    console.log(
-      `🚫 Updated ignore patterns: ${ignorePatterns.length} new + ${DEFAULT_IGNORE_PATTERNS.length} default = ${this.ignorePatterns.length} total patterns`
-    );
-  }
-
-  /**
    * Add custom ignore patterns (from MCP or other sources) without replacing existing ones
    * @param customPatterns Array of custom ignore patterns to add
    */
@@ -1040,6 +1000,12 @@ export class Context {
    */
   private async getCodeFiles(codebasePath: string): Promise<string[]> {
     const files: string[] = [];
+    const mergedIgnorePatterns = await this.loadIgnorePatterns(codebasePath);
+    console.log(
+      `[${new Date().toLocaleString()}] Using ignore patterns in getCodeFiles: ${mergedIgnorePatterns.join(
+        ", "
+      )}`
+    );
 
     const traverseDirectory = async (currentPath: string) => {
       const entries = await fs.promises.readdir(currentPath, {
@@ -1050,7 +1016,9 @@ export class Context {
         const fullPath = path.join(currentPath, entry.name);
 
         // Check if path matches ignore patterns
-        if (matchesIgnorePattern(fullPath, codebasePath, this.ignorePatterns)) {
+        if (
+          matchesIgnorePattern(fullPath, codebasePath, mergedIgnorePatterns)
+        ) {
           continue;
         }
 
@@ -1412,12 +1380,18 @@ export class Context {
    * This method preserves any existing custom patterns that were added before
    * @param codebasePath Path to the codebase
    */
-  private async loadIgnorePatterns(codebasePath: string): Promise<void> {
+  public async loadIgnorePatterns(codebasePath: string): Promise<string[]> {
     try {
+      const gitRepoName = getGitRepoName(codebasePath);
+      const gitRootPath = gitRepoName.gitRoot;
+      if (gitRootPath === "") {
+        return this.ignorePatterns;
+      }
+
       let fileBasedPatterns: string[] = [];
 
       // Load all .xxxignore files in codebase directory
-      const ignoreFiles = await this.findIgnoreFiles(codebasePath);
+      const ignoreFiles = await this.findIgnoreFiles(gitRootPath);
       for (const ignoreFile of ignoreFiles) {
         const patterns = await this.loadIgnoreFile(
           ignoreFile,
@@ -1431,7 +1405,6 @@ export class Context {
       fileBasedPatterns.push(...globalIgnorePatterns);
 
       // Load server ignore patterns
-      const gitRepoName = getGitRepoName(codebasePath);
       const serverIgnorePatterns = await this.getServerRepoIgnorePattern(
         gitRepoName.repoName
       );
@@ -1439,17 +1412,24 @@ export class Context {
 
       // Merge file-based patterns with existing patterns (which may include custom MCP patterns)
       if (fileBasedPatterns.length > 0) {
-        this.addCustomIgnorePatterns(fileBasedPatterns);
+        // Merge current patterns with new custom patterns, avoiding duplicates
+        const mergedPatterns = [...this.ignorePatterns, ...fileBasedPatterns];
+        const uniquePatterns: string[] = [];
+        const patternSet = new Set(mergedPatterns);
+        patternSet.forEach((pattern) => uniquePatterns.push(pattern));
         console.log(
           `🚫 Loaded total ${fileBasedPatterns.length} ignore patterns from all ignore files`
         );
+
+        return uniquePatterns;
       } else {
         console.log("📄 No ignore files found, keeping existing patterns");
       }
     } catch (error) {
       console.warn(`⚠️ Failed to load ignore patterns: ${error}`);
-      // Continue with existing patterns on error - don't reset them
     }
+
+    return this.ignorePatterns;
   }
 
   private async getServerRepoIgnorePattern(

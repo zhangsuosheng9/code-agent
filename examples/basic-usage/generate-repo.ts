@@ -48,12 +48,7 @@ async function generateSnapshot(
   }
 }
 
-async function indexCodePathForRepo(
-  codebasePath: string,
-  ignorePatterns: string[],
-  supportedExtensions: string[],
-  isHybrid: boolean
-) {
+async function indexCodePathForRepo(codebasePath: string, isHybrid: boolean) {
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
@@ -85,8 +80,6 @@ async function indexCodePathForRepo(
     embedding,
     vectorDatabase,
     codeSplitter,
-    supportedExtensions: supportedExtensions,
-    ignorePatterns: ignorePatterns,
     isHybrid: isHybrid,
     customCollectionName: collectionName,
   });
@@ -112,11 +105,8 @@ async function indexCodePathForRepo(
     }
   });
 
-  await generateSnapshot(
-    codebasePath,
-    context.getIgnorePatterns(),
-    supportedExtensions
-  );
+  const ignorePatterns = await context.loadIgnorePatterns(codebasePath);
+  await generateSnapshot(codebasePath, ignorePatterns);
   console.log("✅ Snapshot generated successfully");
 
   await switchAzureAISearchAlias(aliasName, collectionName);
@@ -197,48 +187,18 @@ async function main() {
     {
       repoPath: "D:/src2/AdsSnR",
       // repoPath: "D:/src/simple_repo",
-      ignorePatterns: [
-        "packages/",
-        "*.md",
-        "*.txt",
-        "*.json",
-        "*.yml",
-        "*.yaml",
-        "*.xml",
-        "*.config",
-        "docs/",
-        "third_party/",
-        "3rdparty/",
-        "external/",
-        "build/",
-        "out/",
-        "bin/",
-        "obj/",
-      ],
-      supportedExtensions: [".cs", ".js", ".py", ".cpp", ".h"],
     },
     // {
     //     repoPath: "D:/src2/AdsSnR_IdHash",
-    //     ignorePatterns: [
-    //         "packages/",
-    //     ]
     // },
     // {
     //     repoPath: "D:/src2/AdsInfra_DataServices",
-    //     ignorePatterns: [
-    //         "packages/",
-    //     ]
     // }
   ];
 
   try {
     for (const repo of repoConfig) {
-      await indexCodePathForRepo(
-        repo.repoPath,
-        repo.ignorePatterns,
-        repo.supportedExtensions,
-        true
-      );
+      await indexCodePathForRepo(repo.repoPath, true);
     }
     let endTime = Date.now();
     console.log(`Time taken: ${endTime - startTime}ms`);

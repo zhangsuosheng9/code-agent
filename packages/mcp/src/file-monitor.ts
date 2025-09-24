@@ -196,9 +196,19 @@ export class ProjectFileMonitor {
     this.addToQueue(filePath);
   }
 
-  private ignoreFile(filePath: string): boolean {
+  private ignoreFile(filePath: string, ignorePatterns: string[]): boolean {
     // Ignore files that don't match configured source extensions
     // Skip if path is not a file
+    const isIgnored = matchesIgnorePattern(
+      filePath,
+      this.codebasePath,
+      ignorePatterns
+    );
+
+    if (isIgnored) {
+      return true;
+    }
+
     try {
       const stats = fs.statSync(filePath);
       if (stats.isFile()) {
@@ -211,17 +221,14 @@ export class ProjectFileMonitor {
       // If we can't stat the path, ignore it
       return true;
     }
-    return matchesIgnorePattern(
-      filePath,
-      this.codebasePath,
-      this.context.getIgnorePatterns()
-    );
+
+    return false;
   }
 
   /**
    * Start monitoring the project folder
    */
-  start(): void {
+  async start(): Promise<void> {
     if (this.isWatching) {
       console.warn("[FileMonitor] File monitor is already running");
       return;
@@ -240,6 +247,9 @@ export class ProjectFileMonitor {
         );
       }
 
+      const ignorePatterns = await this.context.loadIgnorePatterns(
+        this.codebasePath
+      );
       console.log(
         `[FileMonitor] Starting file monitor for: ${this.codebasePath}`
       );
@@ -249,16 +259,14 @@ export class ProjectFileMonitor {
           .join(", ")}`
       );
       console.log(
-        `[FileMonitor] Ignoring patterns: ${
-          this.context.getIgnorePatterns().length
-        } patterns configured`
+        `[FileMonitor] Ignoring patterns: ${ignorePatterns.length} patterns configured`
       );
 
       // Create chokidar watcher with optimized settings
       this.watcher = watch(this.codebasePath, {
         ignored: [
           (val: string, stats?: fs.Stats): boolean => {
-            return this.ignoreFile(val);
+            return this.ignoreFile(val, ignorePatterns);
           },
         ],
         persistent: true,
